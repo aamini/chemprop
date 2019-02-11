@@ -1,4 +1,5 @@
 from argparse import ArgumentParser
+from collections import OrderedDict
 import csv
 import sys
 sys.path.append('../')
@@ -7,7 +8,7 @@ import numpy as np
 from scipy.spatial.distance import cdist
 from tqdm import tqdm
 
-from chemprop.data.utils import get_data
+from chemprop.data.utils import get_data, get_smiles
 from chemprop.features import morgan_fingerprint
 from chemprop.nn_utils import compute_molecule_vectors
 from chemprop.train.predict import predict
@@ -16,6 +17,7 @@ from chemprop.utils import load_checkpoint
 
 def find_similar_preds(test_path: str,
                        train_path: str,
+                       antibiotics_path: str,
                        checkpoint_path: str,
                        distance_measure: str,
                        save_path: str,
@@ -25,6 +27,7 @@ def find_similar_preds(test_path: str,
     test_data, train_data = get_data(test_path), get_data(train_path)
     test_smiles, train_smiles = test_data.smiles(), train_data.smiles()
     train_smiles_set = set(train_smiles)
+    antibiotics = set(get_smiles(antibiotics_path))
 
     print('Computing morgan fingerprints')
     test_morgans = np.array([morgan_fingerprint(smiles) for smiles in tqdm(test_data.smiles(), total=len(test_data))])
@@ -63,15 +66,16 @@ def find_similar_preds(test_path: str,
         nearest_train_morgan_dists = test_train_morgan_dist[test_index][nearest_train]
 
         # Build dictionary with distance info
-        neighbor = {
-            'test_smiles': test_smiles[test_index],
-            'in_train': test_smiles[test_index] in train_smiles_set,
-            'test_pred': test_preds[test_index][0],
-            f'train_{num_neighbors}_avg_vec_cosine_dist': np.mean(nearest_train_vec_dists),
-            f'train_{num_neighbors}_avg_morgan_jaccard_dist': np.mean(nearest_train_morgan_dists)
-        }
+        neighbor = OrderedDict()
+        neighbor['test_smiles'] = test_smiles[test_index]
+        neighbor['in_train'] = test_smiles[test_index] in train_smiles_set
+        neighbor['test_pred'] = test_preds[test_index][0]
+        neighbor[f'train_{num_neighbors}_avg_vec_cosine_dist'] = np.mean(nearest_train_vec_dists)
+        neighbor[f'train_{num_neighbors}_avg_morgan_jaccard_dist'] = np.mean(nearest_train_morgan_dists)
+
         for i, train_index in enumerate(nearest_train):
             neighbor[f'train_smiles_{i + 1}'] = train_smiles[train_index]
+            neighbor[f'train_is_antibiotic_{i + 1}'] = train_smiles[train_index] in antibiotics
             neighbor[f'train_vec_cosine_dist_{i + 1}'] = nearest_train_vec_dists[i]
             neighbor[f'train_morgan_jaccard_dist_{i + 1}'] = nearest_train_morgan_dists[i]
 
@@ -80,24 +84,9 @@ def find_similar_preds(test_path: str,
     # Sort by test prediction
     neighbors.sort(key=lambda neighbor: neighbor['test_pred'], reverse=True)
 
-    # Construct fieldnames for save file
-    fieldnames = [
-        'test_smiles',
-        'in_train',
-        'test_pred',
-        f'train_{num_neighbors}_avg_vec_cosine_dist',
-        f'train_{num_neighbors}_avg_morgan_jaccard_dist'
-    ]
-    for i in range(num_neighbors):
-        fieldnames += [
-            f'train_smiles_{i + 1}',
-            f'train_vec_cosine_dist_{i + 1}',
-            f'train_morgan_jaccard_dist_{i + 1}'
-        ]
-
     print('Saving distances')
     with open(save_path, 'w') as f:
-        writer = csv.DictWriter(f, fieldnames=fieldnames)
+        writer = csv.DictWriter(f, fieldnames=neighbors[0].keys())
         writer.writeheader()
         for neighbor in neighbors:
             writer.writerow(neighbor)
@@ -109,6 +98,8 @@ if __name__ == '__main__':
                         help='Path to CSV file with test set of molecules')
     parser.add_argument('--train_path', type=str, required=True,
                         help='Path to CSV file with train set of molecules')
+    parser.add_argument('--antibiotics_path', type=str, required=True,
+                        help='Path to CSV file containing antibiotics')
     parser.add_argument('--checkpoint_path', type=str, required=True,
                         help='Path to .pt file containing a model checkpoint')
     parser.add_argument('--save_path', type=str, required=True,
@@ -124,6 +115,7 @@ if __name__ == '__main__':
     find_similar_preds(
         test_path=args.test_path,
         train_path=args.train_path,
+        antibiotics_path=args.antibiotics_path,
         checkpoint_path=args.checkpoint_path,
         save_path=args.save_path,
         distance_measure=args.distance_measure,
