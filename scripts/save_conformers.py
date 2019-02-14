@@ -13,6 +13,15 @@ from tqdm import tqdm
 from chemprop.data.utils import get_smiles
 
 
+# Loading:
+# supp = Chem.SDMolSupplier('AAAA.sdf')
+# for mol in supp:
+#     conformer = mol.GetConformer()
+#     for i in range(mol.GetNumAtoms():
+#         pos = conformer.GetAtomPosition(i)
+#     smiles = Chem.MolToSmiles(mol)
+
+
 def generate_conformers(smiles: str,
                         num_conformers: int,
                         max_attempts: int,
@@ -34,10 +43,10 @@ def save_conformers(data_dir: str,
                     save_dir: str,
                     num_conformers: int,
                     max_attempts: int,
-                    prune_rms_threshold: float):
+                    prune_rms_threshold: float,
+                    sequential: bool):
     os.makedirs(save_dir, exist_ok=True)
 
-    pool = Pool()
     fnames = [fname for fname in os.listdir(data_dir) if fname.endswith('.txt')]
     generator = partial(
         generate_conformers,
@@ -45,6 +54,7 @@ def save_conformers(data_dir: str,
         max_attempts=max_attempts,
         prune_rms_threshold=prune_rms_threshold
     )
+    map_fn = map if sequential else Pool().imap
 
     for fname in tqdm(fnames, total=len(fnames)):
         data_path = os.path.join(data_dir, fname)
@@ -53,7 +63,7 @@ def save_conformers(data_dir: str,
 
         smiles = get_smiles(data_path)
 
-        for mol, ids in tqdm(pool.imap(generator, smiles), total=len(smiles)):
+        for mol, ids in tqdm(map_fn(generator, smiles), total=len(smiles)):
             for id in ids:
                 writer.write(mol, confId=id)
 
@@ -70,8 +80,10 @@ if __name__ == '__main__':
                         help='Number of conformers to generate per molecule')
     parser.add_argument('--max_attempts', type=int, default=1000,
                          help='Maximum number of conformer attempts per molecule')
-    parser.add_argument('--prune_rsm_threshold', type=float, default=0.1,
+    parser.add_argument('--prune_rms_threshold', type=float, default=0.1,
                          help='Pruning threshold for similar conformers')
+    parser.add_argument('--sequential', action='store_true', default=False,
+                        help='Whether to compute conformers sequentially rather than in parallel')
     args = parser.parse_args()
 
     save_conformers(
@@ -79,5 +91,6 @@ if __name__ == '__main__':
         save_dir=args.save_dir,
         num_conformers=args.num_conformers,
         max_attempts=args.max_attempts,
-        prune_rms_threshold=args.prune_rms_threshold
+        prune_rms_threshold=args.prune_rms_threshold,
+        sequential=args.sequential
     )
