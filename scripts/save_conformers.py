@@ -75,7 +75,7 @@ def save_conformers(data_dir: str,
     """
     os.makedirs(save_dir, exist_ok=True)
 
-    fnames = [fname for fname in os.listdir(data_dir) if fname.endswith('.txt')]
+    fnames = sorted([fname for fname in os.listdir(data_dir) if fname.endswith('.txt')])
     generator = partial(
         generate_conformers,
         num_conformers=num_conformers,
