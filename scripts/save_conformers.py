@@ -1,3 +1,5 @@
+"""Script for generating and saving conformers for molecules."""
+
 from argparse import ArgumentParser
 from functools import partial
 from multiprocessing import Pool
@@ -13,7 +15,7 @@ from tqdm import tqdm
 from chemprop.data.utils import get_smiles
 
 
-# Loading:
+# Loading from SDF:
 # supp = Chem.SDMolSupplier('AAAA.sdf')
 # for mol in supp:
 #     conformer = mol.GetConformer()
@@ -22,10 +24,24 @@ from chemprop.data.utils import get_smiles
 #     smiles = Chem.MolToSmiles(mol)
 
 
+# Computing distance:
+# rms = Chem.rdMolAlign.AlignMol(mol1, mol2)
+# tani = Chem.rdShapeHelpers.ShapeTanimotoDist(mol1, mol2)
+
+
 def generate_conformers(smiles: str,
                         num_conformers: int,
                         max_attempts: int,
                         prune_rms_threshold: float) -> Tuple[Chem.Mol, List[int]]:
+    """
+    Generates multiple conformers for a molecule.
+
+    :param smiles: A SMILES string for a molecule.
+    :param num_conformers: Number of conformers to find for each molecule.
+    :param max_attempts: Maximum number of attempts to find a conformer.
+    :param prune_rms_threshold: Pruning threshold for similar conformers.
+    :return: A tuple containing the RDKit molecule (now containing conformers) and a list of conformer ids.
+    """
     mol = Chem.MolFromSmiles(smiles)
     mol = Chem.AddHs(mol)
     conformers = AllChem.EmbedMultipleConfs(
@@ -45,6 +61,16 @@ def save_conformers(data_dir: str,
                     max_attempts: int,
                     prune_rms_threshold: float,
                     sequential: bool):
+    """
+    Computes and saves multiple conformers for each molecule as an SDF file.
+
+    :param data_dir: Directory containing .txt files with SMILES strings.
+    :param save_dir: Directory where .sdf files containing molecules/conformers will be saved.
+    :param num_conformers: Number of conformers to find for each molecule.
+    :param max_attempts: Maximum number of attempts to find a conformer.
+    :param prune_rms_threshold: Pruning threshold for similar conformers.
+    :param sequential: Whether to compute conformers sequentially rather than in parallel.
+    """
     os.makedirs(save_dir, exist_ok=True)
 
     fnames = [fname for fname in os.listdir(data_dir) if fname.endswith('.txt')]
@@ -58,8 +84,8 @@ def save_conformers(data_dir: str,
 
     for fname in tqdm(fnames, total=len(fnames)):
         data_path = os.path.join(data_dir, fname)
-        save_path = os.path.join(save_dir, f'{os.path.splitext(fname)[0]}.sdf')
-        writer = Chem.SDWriter(save_path)
+        save_path = os.path.join(save_dir, f'{os.path.splitext(fname)[0]}.pdb')
+        writer = Chem.PDBWriter(save_path)
 
         smiles = get_smiles(data_path)
 
@@ -79,9 +105,9 @@ if __name__ == '__main__':
     parser.add_argument('--num_conformers', type=int, default=50,
                         help='Number of conformers to generate per molecule')
     parser.add_argument('--max_attempts', type=int, default=1000,
-                         help='Maximum number of conformer attempts per molecule')
+                        help='Maximum number of conformer attempts per molecule')
     parser.add_argument('--prune_rms_threshold', type=float, default=0.1,
-                         help='Pruning threshold for similar conformers')
+                        help='Pruning threshold for similar conformers')
     parser.add_argument('--sequential', action='store_true', default=False,
                         help='Whether to compute conformers sequentially rather than in parallel')
     args = parser.parse_args()
