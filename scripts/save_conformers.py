@@ -57,6 +57,7 @@ def generate_conformers(smiles: str,
 
 def save_conformers(data_dir: str,
                     save_dir: str,
+                    save_frequency: int,
                     num_conformers: int,
                     max_attempts: int,
                     prune_rms_threshold: float,
@@ -66,6 +67,7 @@ def save_conformers(data_dir: str,
 
     :param data_dir: Directory containing .txt files with SMILES strings.
     :param save_dir: Directory where .sdf files containing molecules/conformers will be saved.
+    :param save_frequency: Number of molecules saved to each SDF file.
     :param num_conformers: Number of conformers to find for each molecule.
     :param max_attempts: Maximum number of attempts to find a conformer.
     :param prune_rms_threshold: Pruning threshold for similar conformers.
@@ -81,17 +83,22 @@ def save_conformers(data_dir: str,
         prune_rms_threshold=prune_rms_threshold
     )
     map_fn = map if sequential else Pool().imap
+    sdf_num = mol_count = 0
 
     for fname in tqdm(fnames, total=len(fnames)):
         data_path = os.path.join(data_dir, fname)
-        save_path = os.path.join(save_dir, f'{os.path.splitext(fname)[0]}.pdb')
-        writer = Chem.PDBWriter(save_path)
-
         smiles = get_smiles(data_path)
 
         for mol, ids in tqdm(map_fn(generator, smiles), total=len(smiles)):
+            if mol_count % save_frequency == 0:
+                save_path = os.path.join(save_dir, f'{sdf_num}.sdf')
+                writer = Chem.SDWriter(save_path)
+                sdf_num += 1
+
             for id in ids:
                 writer.write(mol, confId=id)
+
+            mol_count += 1
 
         writer.close()
 
@@ -102,6 +109,8 @@ if __name__ == '__main__':
                         help='Path to a directory containing .txt files with smiles strings (with a header row)')
     parser.add_argument('--save_dir', type=str, required=True,
                         help='Path to a directory where conformers will be saved as SDFs')
+    parser.add_argument('--save_frequency', type=int, default=10000,
+                        help='Number of molecules saved to each SDF file')
     parser.add_argument('--num_conformers', type=int, default=50,
                         help='Number of conformers to generate per molecule')
     parser.add_argument('--max_attempts', type=int, default=1000,
@@ -115,6 +124,7 @@ if __name__ == '__main__':
     save_conformers(
         data_dir=args.data_dir,
         save_dir=args.save_dir,
+        save_frequency=args.save_frequency,
         num_conformers=args.num_conformers,
         max_attempts=args.max_attempts,
         prune_rms_threshold=args.prune_rms_threshold,
