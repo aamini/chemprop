@@ -28,6 +28,7 @@ class MPNEncoder(nn.Module):
         self.dropout = args.dropout
         self.layers_per_message = 1
         self.undirected = args.undirected
+        self.gated = args.gated
         self.atom_messages = args.atom_messages
         self.use_input_features = args.use_input_features
         self.args = args
@@ -52,6 +53,8 @@ class MPNEncoder(nn.Module):
 
         # Shared weight matrix across depths (default)
         self.W_h = nn.Linear(w_h_input_size, self.hidden_size, bias=self.bias)
+        if self.gated:
+            self.W_rev = nn.Linear(self.hidden_size, self.hidden_size, bias=self.bias)
 
         self.W_o = nn.Linear(self.atom_fdim + self.hidden_size, self.hidden_size)
 
@@ -93,6 +96,8 @@ class MPNEncoder(nn.Module):
         for depth in range(self.depth - 1):
             if self.undirected:
                 message = (message + message[b2revb]) / 2
+            elif self.gated:
+                message = message + self.W_rev(message)
 
             if self.atom_messages:
                 nei_a_message = index_select_ND(message, a2a)  # num_atoms x max_num_bonds x hidden
