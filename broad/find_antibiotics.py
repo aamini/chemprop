@@ -51,9 +51,7 @@ def find_antibiotics(data_dir: str,
                 'file_name',
                 'size',
                 'exact_matches',
-                'exact_matches_percent',
-                'standardized_matches',
-                'standardize_matches_percent'
+                'exact_matches_percent'
             ]
             if standardize:
                 header += [
