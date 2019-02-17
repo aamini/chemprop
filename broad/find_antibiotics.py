@@ -13,7 +13,7 @@ from .smiles_standardizer import SmilesStandardizer
 def find_antibiotics(data_dir: str,
                      antibiotics_path: str,
                      results_path: str):
-    paths = [path for path in os.listdir(data_dir) if path.endswith('.txt')]
+    paths = [os.path.join(data_dir, path) for path in os.listdir(data_dir) if path.endswith('.txt')]
 
     antibiotics = set(get_smiles(antibiotics_path))
     standardizer = SmilesStandardizer()
@@ -37,7 +37,14 @@ def find_antibiotics(data_dir: str,
             count = len(smiles)
             exact_count = sum(1 for smile in smiles if smile in antibiotics)
             standardized_count = sum(1 for smile in smiles if standardizer.standardize(smile) in standardized_antibiotics)
-            writer.writerow([path, count, exact_count, exact_count / count * 100, standardized_count, standardized_count / count * 100])
+            writer.writerow([
+                os.path.basename(path),
+                count,
+                exact_count,
+                exact_count / count * 100,
+                standardized_count,
+                standardized_count / count * 100
+            ])
 
 
 if __name__ == '__main__':
