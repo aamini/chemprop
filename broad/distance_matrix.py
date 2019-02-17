@@ -1,16 +1,17 @@
 from argparse import ArgumentParser
 import csv
+import os
 import sys
-sys.path.append('../')
 
 import numpy as np
 from scipy.spatial.distance import cdist
 from tqdm import tqdm
 
+sys.path.append(os.path.dirname(os.path.dirname(os.path.realpath(__file__))))
+
 from chemprop.data.utils import get_data
 from chemprop.features import morgan_fingerprint
 from chemprop.nn_utils import compute_molecule_vectors
-from chemprop.train.predict import predict
 from chemprop.utils import load_checkpoint
 
 

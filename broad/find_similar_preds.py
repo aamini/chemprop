@@ -1,12 +1,14 @@
 from argparse import ArgumentParser
 from collections import OrderedDict
 import csv
+import os
 import sys
-sys.path.append('../')
 
 import numpy as np
 from scipy.spatial.distance import cdist
 from tqdm import tqdm
+
+sys.path.append(os.path.dirname(os.path.dirname(os.path.realpath(__file__))))
 
 from chemprop.data.utils import get_data, get_smiles
 from chemprop.features import morgan_fingerprint
