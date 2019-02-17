@@ -31,7 +31,7 @@ def find_antibiotics(data_dir: str,
         results_path_exists = False
 
     # Load data paths
-    paths = [os.path.join(data_dir, path) for path in os.listdir(data_dir) if path.endswith('.txt') and os.path.basename(path) not in completed_file_names]
+    paths = [os.path.join(data_dir, path) for path in sorted(os.listdir(data_dir)) if path.endswith('.txt') and os.path.basename(path) not in completed_file_names]
 
     # Load antibiotics
     antibiotics = set(get_smiles(antibiotics_path))
