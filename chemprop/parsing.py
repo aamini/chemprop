@@ -156,7 +156,9 @@ def add_train_args(parser: ArgumentParser):
     parser.add_argument('--undirected', action='store_true', default=False,
                         help='Undirected edges (always sum the two relevant bond vectors)')
     parser.add_argument('--gated', action='store_true', default=False,
-                        help="Version of undirected that's not just a symmetrical sum")                      
+                        help="Version of undirected that's not just a symmetrical sum")              
+    parser.add_argument('--stereo_aware', action='store_true', default=False,
+                        help="Chirality affects the message passing architecture")          
     parser.add_argument('--ffn_hidden_size', type=int, default=None,
                         help='Hidden dim for higher-capacity FFN (defaults to hidden_size)')
     parser.add_argument('--ffn_num_layers', type=int, default=2,
@@ -262,6 +264,9 @@ def modify_train_args(args: Namespace):
     args.minimize_score = args.metric in ['rmse', 'mae']
 
     update_checkpoint_args(args)
+    
+    if args.stereo_aware:
+        assert not args.atom_messages # exclude others too? TODO
     
     if args.features_only:
         assert args.features_generator or args.features_path

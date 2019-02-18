@@ -83,10 +83,10 @@ def atom_features(atom: Chem.rdchem.Atom, functional_groups: List[int] = None) -
     :param functional_groups: A k-hot vector indicating the functional groups the atom belongs to.
     :return: A list containing the atom features.
     """
-    features = onek_encoding_unk(atom.GetAtomicNum() - 1, ATOM_FEATURES['atomic_num']) + \
+    features = onek_encoding_unk(int(atom.GetChiralTag()), ATOM_FEATURES['chiral_tag']) + \
            onek_encoding_unk(atom.GetTotalDegree(), ATOM_FEATURES['degree']) + \
+           onek_encoding_unk(atom.GetAtomicNum() - 1, ATOM_FEATURES['atomic_num']) + \
            onek_encoding_unk(atom.GetFormalCharge(), ATOM_FEATURES['formal_charge']) + \
-           onek_encoding_unk(int(atom.GetChiralTag()), ATOM_FEATURES['chiral_tag']) + \
            onek_encoding_unk(int(atom.GetTotalNumHs()), ATOM_FEATURES['num_Hs']) + \
            onek_encoding_unk(int(atom.GetHybridization()), ATOM_FEATURES['hybridization']) + \
            [1 if atom.GetIsAromatic() else 0] + \
@@ -254,6 +254,7 @@ class BatchMolGraph:
         self.b2revb = torch.LongTensor(b2revb)
         self.b2b = None  # try to avoid computing b2b b/c O(n_atoms^3)
         self.a2a = None  # only needed if using atom messages
+        self.chiral_selector = None
 
     def get_components(self) -> Tuple[torch.FloatTensor, torch.FloatTensor,
                                       torch.LongTensor, torch.LongTensor, torch.LongTensor,
@@ -277,8 +278,13 @@ class BatchMolGraph:
             b2b = self.a2b[self.b2a]  # num_bonds x max_num_bonds
             # b2b includes reverse edge for each bond so need to mask out
             revmask = (b2b != self.b2revb.unsqueeze(1).repeat(1, b2b.size(1))).long()  # num_bonds x max_num_bonds
-            self.b2b = b2b * revmask
-
+            # make sure 
+            masked_b2b = b2b * revmask
+            masked_b2b[masked_b2b == 0] = masked_b2b.max() + 1
+            masked_b2b, _ = torch.sort(masked_b2b, dim=1)
+            masked_b2b[masked_b2b == masked_b2b.max()] = 0
+            self.b2b = masked_b2b
+        
         return self.b2b
 
     def get_a2a(self) -> torch.LongTensor:
@@ -295,6 +301,37 @@ class BatchMolGraph:
             self.a2a = self.b2a[self.a2b]  # num_atoms x max_num_bonds
 
         return self.a2a
+    
+    def get_chiral_selector(self) -> torch.FloatTensor:
+        """
+        Computes (if necessary) and returns a mapping from each bond to the weights for the CW and CCW message passing representations to use.
+
+        :return: Pytorch tensor for selecting CW, CCW, or averaged representation during message passing with stereo_aware flag
+        """
+        if self.chiral_selector is None:
+            # TODO should check all of this carefully. The correctness relies on a LOT of tricky ordering assumptions. 
+            # figure out tag: cw, ccw, or none/unspecified, and make the array of 1 0, 0 1, or .5 .5 for those cases respectively for each bond
+            # chiral tag is now the first four elements in the atom and bond featurization
+            chiral_tags = self.f_bonds[:,0:4] # chiral tag one-hot encoding for each bond's originating atom. in order: unspecified, cw, ccw, other
+            chiral_cw = torch.Tensor([[1, 0]]).repeat(chiral_tags.size(0), 1)
+            chiral_ccw = torch.Tensor([[0, 1]]).repeat(chiral_tags.size(0), 1)
+            chiral_none = torch.Tensor([[.5, .5]]).repeat(chiral_tags.size(0), 1)
+            chiral_selector = chiral_tags[:, 0].unsqueeze(1) * chiral_none + \
+                              chiral_tags[:, 1].unsqueeze(1) * chiral_cw + \
+                              chiral_tags[:, 2].unsqueeze(1) * chiral_ccw + \
+                              chiral_tags[:, 3].unsqueeze(1) * chiral_none
+
+            # note that ordering of bonds corresponds to ordering of the atoms they're attached to, as a consequence of the code in MolGraph
+            # determine which order is cw or ccw for each bond. 
+            # if the bond index is the third largest in the ordering, that means that cw and ccw are flipped when compared to the other 3 cases.
+            # (this is because 1234, 2134, 4231 have their last 3 digits as even permutations of the corresponding sorted sequence, vs 3142 where 142 is an odd permutation of 124)
+            b2b = self.get_b2b() # has indices of the 3 other bonds, in order, as the first 3 elements in each row
+            bond_indices = torch.arange(b2b.size(0))
+            chiral_flip_order = (bond_indices > b2b[:, 1]) * (bond_indices < b2b[:, 2]) # third in order of at least 4 bonds TODO modify or add more logic for 5+ bonds
+            chiral_flip_order = chiral_flip_order.unsqueeze(1).float().repeat((1, 2))
+            self.chiral_selector = chiral_selector * (1-chiral_flip_order) + (1-chiral_selector) * chiral_flip_order
+
+        return self.chiral_selector
 
 
 def mol2graph(smiles_batch: List[str],
