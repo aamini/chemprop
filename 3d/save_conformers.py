@@ -5,28 +5,15 @@ from functools import partial
 from multiprocessing import Pool
 import os
 import sys
-sys.path.append(os.path.dirname(os.path.dirname(os.path.realpath(__file__))))
 from typing import List, Tuple
 
 from rdkit import Chem
 from rdkit.Chem import AllChem
 from tqdm import tqdm
 
+sys.path.append(os.path.dirname(os.path.dirname(os.path.realpath(__file__))))
+
 from chemprop.data.utils import get_smiles
-
-
-# Loading from SDF:
-# supp = Chem.SDMolSupplier('AAAA.sdf')
-# for mol in supp:
-#     conformer = mol.GetConformer()
-#     for i in range(mol.GetNumAtoms():
-#         pos = conformer.GetAtomPosition(i)
-#     smiles = Chem.MolToSmiles(mol)
-
-
-# Computing distance:
-# rms = Chem.rdMolAlign.AlignMol(mol1, mol2)
-# tani = Chem.rdShapeHelpers.ShapeTanimotoDist(mol1, mol2)
 
 
 def generate_conformers(smiles: str,
