@@ -1,5 +1,6 @@
 from argparse import ArgumentParser
 from collections import defaultdict
+import csv
 from functools import partial
 from multiprocessing import Pool
 import os
@@ -9,20 +10,6 @@ from typing import Dict, List, Tuple
 from rdkit import Chem
 from rdkit.Chem import rdFMCS, rdMolAlign, rdShapeHelpers
 from tqdm import tqdm
-
-
-# Loading from SDF:
-# supp = Chem.SDMolSupplier('AAAA.sdf')
-# for mol in supp:
-#     conformer = mol.GetConformer()
-#     for i in range(mol.GetNumAtoms():
-#         pos = conformer.GetAtomPosition(i)
-#     smiles = Chem.MolToSmiles(mol)
-
-
-# Computing distance:
-# rms = Chem.rdMolAlign.AlignMol(mol1, mol2)
-# tani = Chem.rdShapeHelpers.ShapeTanimotoDist(mol1, mol2)
 
 
 def load_conformers_from_file(sdf_path: str,
@@ -80,39 +67,52 @@ def compute_3d_distance(mol_pair: Tuple[Chem.Mol, Chem.Mol]) -> Tuple[Tuple[str,
         return (smiles1, smiles2), 1.0
 
 
-def construct_clusters(conformers: List[Chem.Mol]):
+def construct_clusters(conformers: List[Chem.Mol],
+                       num_clusters: int) -> Dict[Tuple[str, str], bool]:
     import numpy as np
     from itertools import combinations
     from scipy.cluster.hierarchy import fcluster, linkage
     from scipy.misc import comb
+
+    # TODO: fix for smiles with multiple conformers
+
+    # Convert to smiles
+    smiles = [Chem.MolToSmiles(mol) for mol in conformers]
 
     # Compute distances between pairs of conformers
     mol_pairs = combinations(conformers, 2)
     num_mol_pairs = int(comb(len(conformers), 2))
     with Pool() as pool:
         smiles_pair_distances = list(tqdm(pool.imap(compute_3d_distance, mol_pairs), total=num_mol_pairs))
-
     smiles_pairs, distances = zip(*smiles_pair_distances)
-
-    import pdb; pdb.set_trace()
 
     # Perform clustering
     link = linkage(np.array(distances))
-    clusters = fcluster(link, t=1000, criterion='maxclust')
+    clusters = fcluster(link, t=num_clusters, criterion='maxclust')
 
-    # TODO: finish
     # Determine which pairs of smiles are in the same cluster
-    smiles = set.union(*[set(pair) for pair in smiles_pairs])
-    for smiles1, smiles2 in combinations(smiles, 2):
-        pass
+    smiles_clusters = defaultdict(bool)
+    for i, j in combinations(range(len(smiles)), 2):
+        same_cluster = clusters[i] == clusters[j]
+        smiles_pair = (smiles[i], smiles[j])
+        smiles_clusters[smiles_pair] = max(smiles_clusters[smiles_pair], same_cluster)
+
+    return smiles_clusters
 
 
 def build_conformer_pairs(sdf_dir: str,
                           save_path: str,
+                          num_clusters: int,
                           sample_prob: float):
     smiles_to_conformers = load_conformers_from_dir(sdf_dir, sample_prob)
     conformers = [conformer for conformers in smiles_to_conformers.values() for conformer in conformers]
-    cluster_centers = construct_clusters(conformers)
+    smiles_clusters = construct_clusters(conformers, num_clusters)
+
+    with open(save_path, 'w') as f:
+        writer = csv.writer(f)
+        writer.writerow(['smiles_1', 'smiles_2', 'overlap'])
+        for (smiles1, smiles2), overlap in smiles_clusters.items():
+            writer.writerow([smiles1, smiles2, overlap])
 
 
 if __name__ == '__main__':
@@ -121,6 +121,8 @@ if __name__ == '__main__':
                         help='Path to directory containing .sdf files with conformers')
     parser.add_argument('--save_path', type=str, required=True,
                         help='Path to .csv file where pairs will be saved')
+    parser.add_argument('--num_clusters', type=int, default=1000,
+                        help='Number of clusters')
     parser.add_argument('--sample_prob', type=float, default=1,
                         help='Probability with which each conformer is sampled')
     args = parser.parse_args()
@@ -128,5 +130,6 @@ if __name__ == '__main__':
     build_conformer_pairs(
         sdf_dir=args.sdf_dir,
         save_path=args.save_path,
+        num_clusters=args.num_clusters,
         sample_prob=args.sample_prob
     )
