@@ -315,7 +315,7 @@ class BatchMolGraph:
             chiral_tags = self.f_bonds[:,0:4] # chiral tag one-hot encoding for each bond's originating atom. in order: unspecified, cw, ccw, other
             chiral_cw = torch.Tensor([[1, 0]]).repeat(chiral_tags.size(0), 1)
             chiral_ccw = torch.Tensor([[0, 1]]).repeat(chiral_tags.size(0), 1)
-            chiral_none = torch.zeros((chiral_tags.size(0), 2)) + 0.5
+            chiral_none = torch.Tensor([[.5, .5]]).repeat(chiral_tags.size(0), 1)
             chiral_selector = chiral_tags[:, 0].unsqueeze(1) * chiral_none + \
                               chiral_tags[:, 1].unsqueeze(1) * chiral_cw + \
                               chiral_tags[:, 2].unsqueeze(1) * chiral_ccw + \
