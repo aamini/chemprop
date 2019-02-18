@@ -18,9 +18,10 @@ def find_antibiotics(data_dir: str,
                      standardize: bool,
                      restart: bool):
     if standardize:
-        from molvs import standardize_smiles
+        # from molvs import standardize_smiles
+        from standardize_smiles import standardize_smiles
 
-    # Load partially complete results if not restartinng
+    # Load partially complete results if not restarting
     if not restart and os.path.exists(results_path):
         with open(results_path) as f:
             reader = csv.DictReader(f)
