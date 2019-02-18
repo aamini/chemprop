@@ -84,6 +84,7 @@ def save_conformers(data_dir: str,
     )
     map_fn = map if sequential else Pool().imap
     sdf_num = mol_count = 0
+    writer = None
 
     for fname in tqdm(fnames, total=len(fnames)):
         data_path = os.path.join(data_dir, fname)
@@ -92,6 +93,8 @@ def save_conformers(data_dir: str,
         for mol, ids in tqdm(map_fn(generator, smiles), total=len(smiles)):
             if mol_count % save_frequency == 0:
                 save_path = os.path.join(save_dir, f'{sdf_num * save_frequency}-{(sdf_num + 1) * save_frequency - 1}.sdf')
+                if writer is not None:
+                    writer.close()
                 writer = Chem.SDWriter(save_path)
                 sdf_num += 1
 
