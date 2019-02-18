@@ -14,39 +14,35 @@ from tqdm import tqdm
 
 def load_conformers_from_file(sdf_path: str,
                               sample_prob: float,
-                              print_frequency: int = 10000) -> Dict[str, List[Chem.Mol]]:
+                              print_frequency: int = 10000) -> List[Chem.Mol]:
     random.seed(0)
-    smiles_to_conformers = defaultdict(list)
 
-    supp = Chem.SDMolSupplier(sdf_path)
-    for i, mol in enumerate(supp):
+    conformers = []
+    for i, mol in enumerate(Chem.SDMolSupplier(sdf_path)):
         if i % print_frequency == 0:
             print(f'{i:,}')
+
+            # TODO: remove
             if i > 0:
                 break
         if random.random() < sample_prob:
-            smiles = Chem.MolToSmiles(mol)
-            smiles_to_conformers[smiles].append(mol)
+            conformers.append(mol)
 
-    return smiles_to_conformers
+    return conformers
 
 
 def load_conformers_from_dir(sdf_dir: str,
-                             sample_prob: float) -> Dict[str, List[Chem.Mol]]:
+                             sample_prob: float,
+                             print_frequency: int) -> List[Chem.Mol]:
     sdf_paths = [os.path.join(sdf_dir, fname) for fname in os.listdir(sdf_dir) if fname.endswith('.sdf')]
-    load_conformers_fn = partial(load_conformers_from_file, sample_prob=sample_prob)
+    load_conformers_fn = partial(load_conformers_from_file, sample_prob=sample_prob, print_frequency=print_frequency)
 
     # Load conformers and construct smiles to conformers dictionaries
     with Pool() as pool:
-        smiles_to_conformers_dicts = list(tqdm(pool.imap(load_conformers_fn, sdf_paths), total=len(sdf_paths)))
+        conformers = [conformer for conformers in tqdm(pool.imap(load_conformers_fn, sdf_paths), total=len(sdf_paths))
+                      for conformer in conformers]
 
-    # Merge smiles to conformers dictionaries
-    smiles_to_conformers = defaultdict(list)
-    for smiles_to_conformers_dict in smiles_to_conformers_dicts:
-        for smiles, mols in smiles_to_conformers_dict.items():
-            smiles_to_conformers[smiles].extend(mols)
-
-    return smiles_to_conformers
+    return conformers
 
 
 def compute_3d_distance(mol_pair: Tuple[Chem.Mol, Chem.Mol]) -> Tuple[Tuple[str, str], float]:
@@ -74,8 +70,6 @@ def construct_clusters(conformers: List[Chem.Mol],
     from scipy.cluster.hierarchy import fcluster, linkage
     from scipy.misc import comb
 
-    # TODO: fix for smiles with multiple conformers
-
     # Convert to smiles
     smiles = [Chem.MolToSmiles(mol) for mol in conformers]
 
@@ -90,7 +84,7 @@ def construct_clusters(conformers: List[Chem.Mol],
     link = linkage(np.array(distances))
     clusters = fcluster(link, t=num_clusters, criterion='maxclust')
 
-    # Determine which pairs of smiles are in the same cluster
+    # Determine which pairs of smiles have at least one conformer in the same cluster
     smiles_clusters = defaultdict(bool)
     for i, j in combinations(range(len(smiles)), 2):
         same_cluster = clusters[i] == clusters[j]
@@ -103,10 +97,17 @@ def construct_clusters(conformers: List[Chem.Mol],
 def build_conformer_pairs(sdf_dir: str,
                           save_path: str,
                           num_clusters: int,
-                          sample_prob: float):
-    smiles_to_conformers = load_conformers_from_dir(sdf_dir, sample_prob)
-    conformers = [conformer for conformers in smiles_to_conformers.values() for conformer in conformers]
+                          sample_prob: float,
+                          print_frequency: int):
+    conformers = load_conformers_from_dir(sdf_dir, sample_prob, print_frequency)
     smiles_clusters = construct_clusters(conformers, num_clusters)
+
+    num_pairs = len(smiles_clusters)
+    num_overlapping_pairs = sum(smiles_clusters.values())
+
+    print(f'Number of pairs = {num_pairs}')
+    print(f'Number of overlapping pairs = {num_overlapping_pairs}')
+    print(f'Percent of overlapping pairs = {num_overlapping_pairs / num_pairs * 100}%')
 
     with open(save_path, 'w') as f:
         writer = csv.writer(f)
@@ -125,11 +126,14 @@ if __name__ == '__main__':
                         help='Number of clusters')
     parser.add_argument('--sample_prob', type=float, default=1,
                         help='Probability with which each conformer is sampled')
+    parser.add_argument('--print_frequency', type=int, default=10000,
+                        help='Print frequency when loading conformers from disk')
     args = parser.parse_args()
 
     build_conformer_pairs(
         sdf_dir=args.sdf_dir,
         save_path=args.save_path,
         num_clusters=args.num_clusters,
-        sample_prob=args.sample_prob
+        sample_prob=args.sample_prob,
+        print_frequency=args.print_frequency
     )
