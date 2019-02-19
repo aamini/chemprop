@@ -320,7 +320,7 @@ class BatchMolGraph:
                               chiral_tags[:, Chem.rdchem.ChiralType.CHI_TETRAHEDRAL_CW].unsqueeze(1) * chiral_cw + \
                               chiral_tags[:, Chem.rdchem.ChiralType.CHI_TETRAHEDRAL_CCW].unsqueeze(1) * chiral_ccw + \
                               chiral_tags[:, Chem.rdchem.ChiralType.CHI_OTHER].unsqueeze(1) * chiral_none + \
-                              chiral_tags[:, len(ATOM_FEATURES['chiral_tag'])+1].unsqueeze(1) * chiral_none
+                              chiral_tags[:, len(ATOM_FEATURES['chiral_tag'])].unsqueeze(1) * chiral_none
 
             # note that ordering of bonds corresponds to ordering of the atoms they're attached to, as a consequence of the code in MolGraph
             # determine which order is cw or ccw for each bond. 
