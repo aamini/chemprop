@@ -5,28 +5,15 @@ from functools import partial
 from multiprocessing import Pool
 import os
 import sys
-sys.path.append(os.path.dirname(os.path.dirname(os.path.realpath(__file__))))
 from typing import List, Tuple
 
 from rdkit import Chem
 from rdkit.Chem import AllChem
 from tqdm import tqdm
 
+sys.path.append(os.path.dirname(os.path.dirname(os.path.realpath(__file__))))
+
 from chemprop.data.utils import get_smiles
-
-
-# Loading from SDF:
-# supp = Chem.SDMolSupplier('AAAA.sdf')
-# for mol in supp:
-#     conformer = mol.GetConformer()
-#     for i in range(mol.GetNumAtoms():
-#         pos = conformer.GetAtomPosition(i)
-#     smiles = Chem.MolToSmiles(mol)
-
-
-# Computing distance:
-# rms = Chem.rdMolAlign.AlignMol(mol1, mol2)
-# tani = Chem.rdShapeHelpers.ShapeTanimotoDist(mol1, mol2)
 
 
 def generate_conformers(smiles: str,
@@ -84,6 +71,7 @@ def save_conformers(data_dir: str,
     )
     map_fn = map if sequential else Pool().imap
     sdf_num = mol_count = 0
+    writer = None
 
     for fname in tqdm(fnames, total=len(fnames)):
         data_path = os.path.join(data_dir, fname)
@@ -92,6 +80,8 @@ def save_conformers(data_dir: str,
         for mol, ids in tqdm(map_fn(generator, smiles), total=len(smiles)):
             if mol_count % save_frequency == 0:
                 save_path = os.path.join(save_dir, f'{sdf_num * save_frequency}-{(sdf_num + 1) * save_frequency - 1}.sdf')
+                if writer is not None:
+                    writer.close()
                 writer = Chem.SDWriter(save_path)
                 sdf_num += 1
 
