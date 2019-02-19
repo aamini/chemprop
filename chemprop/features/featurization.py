@@ -312,14 +312,15 @@ class BatchMolGraph:
             # TODO should check all of this carefully. The correctness relies on a LOT of tricky ordering assumptions. 
             # figure out tag: cw, ccw, or none/unspecified, and make the array of 1 0, 0 1, or .5 .5 for those cases respectively for each bond
             # chiral tag is now the first four elements in the atom and bond featurization
-            chiral_tags = self.f_bonds[:,0:4] # chiral tag one-hot encoding for each bond's originating atom. in order: unspecified, cw, ccw, other
+            chiral_tags = self.f_bonds[:,0:len(ATOM_FEATURES['chiral_tag'])+1] # chiral tag one-hot encoding for each bond's originating atom. in order: unspecified, cw, ccw, other, and not found in rdkit
             chiral_cw = torch.Tensor([[1, 0]]).repeat(chiral_tags.size(0), 1)
             chiral_ccw = torch.Tensor([[0, 1]]).repeat(chiral_tags.size(0), 1)
             chiral_none = torch.Tensor([[.5, .5]]).repeat(chiral_tags.size(0), 1)
-            chiral_selector = chiral_tags[:, 0].unsqueeze(1) * chiral_none + \
-                              chiral_tags[:, 1].unsqueeze(1) * chiral_cw + \
-                              chiral_tags[:, 2].unsqueeze(1) * chiral_ccw + \
-                              chiral_tags[:, 3].unsqueeze(1) * chiral_none
+            chiral_selector = chiral_tags[:, Chem.rdchem.ChiralType.CHI_UNSPECIFIED].unsqueeze(1) * chiral_none + \
+                              chiral_tags[:, Chem.rdchem.ChiralType.CHI_TETRAHEDRAL_CW].unsqueeze(1) * chiral_cw + \
+                              chiral_tags[:, Chem.rdchem.ChiralType.CHI_TETRAHEDRAL_CCW].unsqueeze(1) * chiral_ccw + \
+                              chiral_tags[:, Chem.rdchem.ChiralType.CHI_OTHER].unsqueeze(1) * chiral_none + \
+                              chiral_tags[:, len(ATOM_FEATURES['chiral_tag'])+1].unsqueeze(1) * chiral_none
 
             # note that ordering of bonds corresponds to ordering of the atoms they're attached to, as a consequence of the code in MolGraph
             # determine which order is cw or ccw for each bond. 
