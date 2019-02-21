@@ -78,7 +78,6 @@ def get_num_lines(path: str) -> int:
 def convert_smiles_to_mol2(data_dir: str,
                            save_dir: str,
                            chunk_size: int,
-                           max_num_molecules: int,
                            sequential: bool):
     """
     Converts files of SMILES strings to mol2 files.
@@ -86,7 +85,6 @@ def convert_smiles_to_mol2(data_dir: str,
     :param data_dir: Directory containing .txt files with SMILES strings.
     :param save_dir: Directory where .mol2 files containing molecules/conformers will be saved.
     :param chunk_size: Number of molecules saved to each mol2 file.
-    :param max_num_molecules: 
     :param sequential: Whether to convert sequentially rather than in parallel.
     """
     os.makedirs(save_dir, exist_ok=True)
@@ -109,8 +107,6 @@ if __name__ == '__main__':
                         help='Path to a directory where mol2 files will be saved')
     parser.add_argument('--chunk_size', type=int, default=10000,
                         help='Number of molecules saved to each mol2 file')
-    parser.add_argument('--max_num_molecules', type=int, default=None,
-                        help='Maximum number of molecules to convert')
     parser.add_argument('--sequential', action='store_true', default=False,
                         help='Whether to compute conformers sequentially rather than in parallel')
     args = parser.parse_args()
@@ -119,6 +115,5 @@ if __name__ == '__main__':
         data_dir=args.data_dir,
         save_dir=args.save_dir,
         chunk_size=args.chunk_size,
-        max_num_molecules=args.max_num_molecules,
         sequential=args.sequential
     )
