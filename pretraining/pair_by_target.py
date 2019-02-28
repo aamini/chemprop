@@ -2,10 +2,10 @@ from argparse import ArgumentParser
 import csv
 import os
 import sys
-from tqdm import tqdm
 
 import numpy as np
 from scipy.misc import comb
+from tqdm import tqdm
 
 sys.path.append(os.path.dirname(os.path.dirname(os.path.realpath(__file__))))
 

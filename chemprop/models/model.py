@@ -1,23 +1,31 @@
 from argparse import Namespace
+from typing import List, Union
 
+import numpy as np
+import torch
 import torch.nn as nn
 
 from .mpn import MPN
+from chemprop.features import BatchMolGraph
 from chemprop.nn_utils import get_activation_function, initialize_weights
 
 
 class MoleculeModel(nn.Module):
     """A MoleculeModel is a model which contains a message passing network following by feed-forward layers."""
 
-    def __init__(self, classification: bool):
+    def __init__(self, classification: bool, siamese: bool):
         """
         Initializes the MoleculeModel.
 
         :param classification: Whether the model is a classification model.
+        :param siamese: Whether the model is a siamese model (i.e. two copies of the
+        same model which determine the distance between inputs).
         """
         super(MoleculeModel, self).__init__()
 
         self.classification = classification
+        self.siamese = siamese
+
         if self.classification:
             self.sigmoid = nn.Sigmoid()
 
@@ -65,17 +73,31 @@ class MoleculeModel(nn.Module):
                 nn.Linear(args.ffn_hidden_size, args.output_size),
             ])
 
+        if self.siamese:
+            ffn = ffn[:-1]  # Drop final output layer
+
         # Create FFN model
         self.ffn = nn.Sequential(*ffn)
 
-    def forward(self, *input):
+    def forward(self,
+                batch: Union[List[str], BatchMolGraph],
+                features_batch: List[np.ndarray] = None,
+                batch_2: Union[List[str], BatchMolGraph] = None) -> torch.Tensor:
         """
         Runs the MoleculeModel on input.
 
-        :param input: Input.
-        :return: The output of the MoleculeModel.
+        :param batch: A list of SMILES strings or a BatchMolGraph (if self.graph_input is True).
+        :param features_batch: A list of ndarrays containing additional features.
+        :param batch_2: A list of SMILES strings or a BatchMolGraph (if self.graph_input is True).
+        Only used for siamese network.
+        :return: The output of the MoleculeModel, a 1D torch tensor of length batch_size.
         """
-        output = self.ffn(self.encoder(*input))
+        output = self.ffn(self.encoder(batch, features_batch))
+
+        if self.siamese:
+            output_2 = self.ffn(self.encoder(batch_2))
+            # Dot product between final representations
+            output = torch.bmm(output.unsqueeze(1), output_2.unsqueeze(2)).squeeze(1)
 
         # Don't apply sigmoid during training b/c using BCEWithLogitsLoss
         if self.classification and not self.training:
@@ -94,7 +116,10 @@ def build_model(args: Namespace) -> nn.Module:
     output_size = args.num_tasks
     args.output_size = output_size
 
-    model = MoleculeModel(classification=args.dataset_type == 'classification')
+    model = MoleculeModel(
+        classification=args.dataset_type == 'classification',
+        siamese=args.siamese
+    )
     model.create_encoder(args)
     model.create_ffn(args)
 

@@ -104,8 +104,10 @@ def get_data(path: str,
     if args is not None:
         max_data_size = max_data_size or float('inf')
         features_path = features_path or args.features_path
+        siamese = args.siamese
     else:
         max_data_size = max_data_size or float('inf')
+        siamese = False
 
     # Load features
     if features_path is not None:
@@ -140,7 +142,8 @@ def get_data(path: str,
                 line=line,
                 args=args,
                 features=features_data[i] if features_data is not None else None,
-                use_compound_names=use_compound_names
+                use_compound_names=use_compound_names,
+                siamese=siamese
             ) for i, line in tqdm(enumerate(lines), total=len(lines))
         ])
 

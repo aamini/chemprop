@@ -54,7 +54,7 @@ def train(model: nn.Module,
             break
         mol_batch = MoleculeDataset(data[i:i + args.batch_size])
         smiles_batch, features_batch, target_batch = mol_batch.smiles(), mol_batch.features(), mol_batch.targets()
-        batch = smiles_batch
+        smiles_2_batch = mol_batch.smiles_2() if model.siamese else None
         mask = torch.Tensor([[x is not None for x in tb] for tb in target_batch])
         targets = torch.Tensor([[0 if x is None else x for x in tb] for tb in target_batch])
 
@@ -68,7 +68,7 @@ def train(model: nn.Module,
 
         # Run model
         model.zero_grad()
-        preds = model(batch, features_batch)
+        preds = model(smiles_batch, features_batch, smiles_2_batch)
 
         loss = loss_func(preds, targets) * class_weights * mask
         loss = loss.sum() / mask.sum()

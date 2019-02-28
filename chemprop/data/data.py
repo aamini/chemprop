@@ -17,7 +17,8 @@ class MoleculeDatapoint:
                  line: List[str],
                  args: Namespace = None,
                  features: np.ndarray = None,
-                 use_compound_names: bool = False):
+                 use_compound_names: bool = False,
+                 siamese: bool = False):
         """
         Initializes a MoleculeDatapoint, which contains a single molecule.
 
@@ -25,6 +26,7 @@ class MoleculeDatapoint:
         :param args: Arguments.
         :param features: A numpy array containing additional features (ex. Morgan fingerprint).
         :param use_compound_names: Whether the data CSV includes the compound name on each line.
+        :param siamese: Whether the data is siamese (i.e. pairs of smiles).
         """
         if args is not None:
             self.features_generator = args.features_generator
@@ -45,6 +47,13 @@ class MoleculeDatapoint:
 
         self.smiles = line[0]  # str
         self.mol = Chem.MolFromSmiles(self.smiles)
+
+        if siamese:
+            line = line[1:]
+            self.smiles_2 = line[0]  # str
+
+            if features is not None or self.features_generator is not None:
+                raise ValueError('Features currently not supported with siamese networks')
 
         # Generate additional features if given a generator
         if self.features_generator is not None:
@@ -121,6 +130,16 @@ class MoleculeDataset(Dataset):
         :return: A list of smiles strings.
         """
         return [d.smiles for d in self.data]
+
+    def smiles_2(self) -> List[str]:
+        """
+        Returns the smiles strings associated with the second of a pair of molecules.
+
+        Only valid if siamese network.
+
+        :return: A list of smiles strings.
+        """
+        return [d.smiles_2 for d in self.data]
     
     def mols(self) -> List[Chem.Mol]:
         """

@@ -161,6 +161,9 @@ def add_train_args(parser: ArgumentParser):
                         help='Number of layers in FFN after MPN encoding')
     parser.add_argument('--atom_messages', action='store_true', default=False,
                         help='Use messages on atoms instead of messages on bonds')
+    parser.add_argument('--siamese', action='store_true', default=False,
+                        help='Builds a siamese network with two copies of the same model'
+                             '(requires loading a dataset with pairs of smiles strings)')
 
 
 def update_checkpoint_args(args: Namespace):
