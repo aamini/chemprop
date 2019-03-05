@@ -9,7 +9,6 @@ from tqdm import tqdm
 
 sys.path.append(os.path.dirname(os.path.dirname(os.path.realpath(__file__))))
 
-from chemprop.data.utils import get_smiles
 from chemprop.utils import makedirs
 
 
