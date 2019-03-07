@@ -64,8 +64,14 @@ def cluster_zinc_molecules(data_path: str,
         makedirs(cluster_dir)
 
         # Get smiles and zinc indices for molecules in cluster
-        smiles, zinc_indices, in_train, in_train_hit = zip(*[
-            (datapoint['smiles'], datapoint['zinc_index'], datapoint['in_train'], datapoint['in_train_hit'])
+        smiles, zinc_indices, in_train, in_train_hit, pred = zip(*[
+            (
+                datapoint['smiles'],
+                datapoint['zinc_index'],
+                datapoint['in_train'],
+                datapoint['in_train_hit'],
+                datapoint['50uMInhibition_Avg']
+            )
             for datapoint in cluster_data
         ])
 
@@ -75,6 +81,7 @@ def cluster_zinc_molecules(data_path: str,
         cluster_table.append([f'cluster_{cluster}_zinc_indices'] + list(zinc_indices) + blanks)
         cluster_table.append([f'cluster_{cluster}_in_train'] + list(in_train) + blanks)
         cluster_table.append([f'cluster_{cluster}_in_train_hit'] + list(in_train_hit) + blanks)
+        cluster_table.append([f'cluster_{cluster}_50uMInhibition_Avg'] + list(pred) + blanks)
 
         # Add smiles and zinc indices to cluster table and save molecule images
         for smile, zinc_index in zip(smiles, zinc_indices):
