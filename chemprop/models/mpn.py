@@ -28,9 +28,11 @@ class MPNEncoder(nn.Module):
         self.dropout = args.dropout
         self.layers_per_message = 1
         self.undirected = args.undirected
+        self.gated = args.gated
         self.atom_messages = args.atom_messages
         self.use_input_features = args.use_input_features
         self.args = args
+        self.stereo_aware = args.stereo_aware
 
         # Dropout
         self.dropout_layer = nn.Dropout(p=self.dropout)
@@ -50,8 +52,15 @@ class MPNEncoder(nn.Module):
         else:
             w_h_input_size = self.hidden_size
 
-        # Shared weight matrix across depths (default)
-        self.W_h = nn.Linear(w_h_input_size, self.hidden_size, bias=self.bias)
+        if self.stereo_aware: # TODO doesn't support 5+ bonds on an atom or E/Z yet. 
+            self.W_h1 = nn.Linear(self.hidden_size, self.hidden_size, bias=self.bias)
+            self.W_h2 = nn.Linear(self.hidden_size, self.hidden_size, bias=self.bias)
+        else:
+            # Shared weight matrix across depths (default)
+            self.W_h = nn.Linear(w_h_input_size, self.hidden_size, bias=self.bias)
+
+        if self.gated:
+            self.W_rev = nn.Linear(self.hidden_size, self.hidden_size, bias=self.bias)
 
         self.W_o = nn.Linear(self.atom_fdim + self.hidden_size, self.hidden_size)
 
@@ -81,6 +90,13 @@ class MPNEncoder(nn.Module):
 
             if self.atom_messages:
                 a2a = a2a.cuda()
+        
+        if self.stereo_aware:
+            b2b = mol_graph.get_b2b()
+            chiral_selector = mol_graph.get_chiral_selector() # num_bonds x 2
+            if self.args.cuda:
+                b2b = b2b.cuda()
+                chiral_selector = chiral_selector.cuda()
 
         # Input
         if self.atom_messages:
@@ -93,21 +109,38 @@ class MPNEncoder(nn.Module):
         for depth in range(self.depth - 1):
             if self.undirected:
                 message = (message + message[b2revb]) / 2
+            elif self.gated:
+                message = message + self.W_rev(message)
 
             if self.atom_messages:
                 nei_a_message = index_select_ND(message, a2a)  # num_atoms x max_num_bonds x hidden
                 nei_f_bonds = index_select_ND(f_bonds, a2b)  # num_atoms x max_num_bonds x bond_fdim
                 nei_message = torch.cat((nei_a_message, nei_f_bonds), dim=2)  # num_atoms x max_num_bonds x hidden + bond_fdim
                 message = nei_message.sum(dim=1)  # num_atoms x hidden + bond_fdim
+                message = self.W_h(message)
+            elif self.stereo_aware:
+                # TODO figure out case with 5+ bonds
+                # create f(b0,b1) + f(b1,b2) + f(b2,b0) for CW and f(b0,b2) + f(b2,b1) + f(b1,b0) for CCW (arbitrary choice; could swap too)
+                rep_cw = (1+self.W_h1(message[b2b[:,0]])) * (1+self.W_h2(message[b2b[:,1]])) + \
+                         (1+self.W_h1(message[b2b[:,1]])) * (1+self.W_h2(message[b2b[:,2]])) + \
+                         (1+self.W_h1(message[b2b[:,2]])) * (1+self.W_h2(message[b2b[:,0]])) - 3 # num_bonds x hidden
+                rep_ccw = (1+self.W_h1(message[b2b[:,0]])) * (1+self.W_h2(message[b2b[:,2]])) + \
+                          (1+self.W_h1(message[b2b[:,2]])) * (1+self.W_h2(message[b2b[:,1]])) + \
+                          (1+self.W_h1(message[b2b[:,1]])) * (1+self.W_h2(message[b2b[:,0]])) - 3 # num_bonds x hidden
+                message = chiral_selector[:, 0].unsqueeze(1) * rep_cw + chiral_selector[:, 1].unsqueeze(1) * rep_ccw # num_bonds x hidden
+                # I am pretty sure that this logic will work out even in cases of 3 or fewer bonds, as is common for e.g. nitrogen, oxygen, etc.
+                # This algorithm will basically just treat it as if there is an extra hydrogen(s) attached, with unspecified chirality,
+                # but because you have the atomic number I think it should be ok? but TODO could change if necessary.
             else:
+                # default D-MPNN
                 # m(a1 -> a2) = [sum_{a0 \in nei(a1)} m(a0 -> a1)] - m(a2 -> a1)
                 # message      a_message = sum(nei_a_message)      rev_message
                 nei_a_message = index_select_ND(message, a2b)  # num_atoms x max_num_bonds x hidden
                 a_message = nei_a_message.sum(dim=1)  # num_atoms x hidden
                 rev_message = message[b2revb]  # num_bonds x hidden
                 message = a_message[b2a] - rev_message  # num_bonds x hidden
+                message = self.W_h(message)
 
-            message = self.W_h(message)
             message = self.act_func(input + message)  # num_bonds x hidden_size
             message = self.dropout_layer(message)  # num_bonds x hidden
 
