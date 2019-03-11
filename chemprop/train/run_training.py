@@ -240,6 +240,7 @@ def run_training(args: Namespace, logger: Logger = None) -> List[float]:
             sum_test_preds += np.array(test_preds)
 
         if args.gaussian:
+            model.eval()
             last_hidden = model.last_hidden(train_data)
             sum_last_hidden += np.array(last_hidden)
 
@@ -265,14 +266,14 @@ def run_training(args: Namespace, logger: Logger = None) -> List[float]:
         else:
             gaussian = GaussianProcessClassifier.fit(avg_last_hidden, train_targets)
 
-        gaussian_predictions = gaussian.predict(avg_test_preds)
+        avg_test_preds = gaussian.predict(avg_test_preds)
 
         with open(os.path.join(args.save_dir, 'gaussian.pickle'), 'wb') as handle:
             pickle.dump(gaussian, handle)
 
 
     ensemble_scores = evaluate_predictions(
-        preds=gaussian_predictions if args.gaussian else avg_test_preds,
+        preds=avg_test_preds,
         targets=test_targets,
         num_tasks=args.num_tasks,
         metric_func=metric_func,

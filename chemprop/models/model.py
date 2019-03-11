@@ -1,10 +1,17 @@
 from argparse import Namespace
 
+from sklearn.gaussian_process import GaussianProcessClassifier, GaussianProcessRegressor
 import torch.nn as nn
 
 from .mpn import MPN
 from chemprop.nn_utils import get_activation_function, initialize_weights
 
+class MoleculeModelEnsemble(nn.Module):
+    def __init__(self, ensemble_size: int, classification: bool, gaussian: bool):
+        super(MoleculeModelEnsemble, self).__init__()
+
+        self.models = [MoleculeModel(classification) for _ in range(ensemble_size)]
+        self.gaussian = GaussianProcessClassifier() if classification else GaussianProcessRegressor()
 
 class MoleculeModel(nn.Module):
     """A MoleculeModel is a model which contains a message passing network following by feed-forward layers."""
@@ -18,8 +25,11 @@ class MoleculeModel(nn.Module):
         super(MoleculeModel, self).__init__()
 
         self.classification = classification
+
         if self.classification:
             self.sigmoid = nn.Sigmoid()
+
+        self.use_last_layer = True
 
     def create_encoder(self, args: Namespace):
         """
@@ -68,13 +78,6 @@ class MoleculeModel(nn.Module):
         # Create FFN model
         self.ffn = nn.Sequential(*ffn)
 
-    def last_hidden(self, *input):
-        """
-
-        :return:
-        """
-        return self.ffn[:-2](self.encoder(*input))
-
     def forward(self, *input):
         """
         Runs the MoleculeModel on input.
@@ -82,10 +85,11 @@ class MoleculeModel(nn.Module):
         :param input: Input.
         :return: The output of the MoleculeModel.
         """
-        output = self.ffn(self.encoder(*input))
+        ffn = self.ffn if self.use_last_layer else list(self.ffn.children()[:-1])
+        output = ffn(self.encoder(*input))
 
         # Don't apply sigmoid during training b/c using BCEWithLogitsLoss
-        if self.classification and not self.training:
+        if self.classification and not self.training and self.use_last_layer:
             output = self.sigmoid(output)
 
         return output
