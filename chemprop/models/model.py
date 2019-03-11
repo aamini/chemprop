@@ -68,6 +68,13 @@ class MoleculeModel(nn.Module):
         # Create FFN model
         self.ffn = nn.Sequential(*ffn)
 
+    def last_hidden(self, *input):
+        """
+
+        :return:
+        """
+        return self.ffn[:-2](self.encoder(*input))
+
     def forward(self, *input):
         """
         Runs the MoleculeModel on input.

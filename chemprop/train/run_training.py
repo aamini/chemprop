@@ -6,6 +6,7 @@ from pprint import pformat
 from typing import List
 
 import numpy as np
+from sklearn.gaussian_process import GaussianProcessClassifier, GaussianProcessRegressor
 from tensorboardX import SummaryWriter
 import torch
 from tqdm import trange
@@ -136,6 +137,9 @@ def run_training(args: Namespace, logger: Logger = None) -> List[float]:
     test_smiles, test_targets = test_data.smiles(), test_data.targets()
     sum_test_preds = np.zeros((len(test_smiles), args.num_tasks))
 
+    if args.gaussian:
+        sum_last_hidden = np.zeros((len(train_smiles), args.ffn_hidden_size))
+
     # Train ensemble of models
     for model_idx in range(args.ensemble_size):
         # Tensorboard writer
@@ -235,6 +239,10 @@ def run_training(args: Namespace, logger: Logger = None) -> List[float]:
         if len(test_preds) != 0:
             sum_test_preds += np.array(test_preds)
 
+        if args.gaussian:
+            last_hidden = model.last_hidden(train_data)
+            sum_last_hidden += np.array(last_hidden)
+
         # Average test score
         avg_test_score = np.nanmean(test_scores)
         info(f'Model {model_idx} test {args.metric} = {avg_test_score:.6f}')
@@ -249,14 +257,29 @@ def run_training(args: Namespace, logger: Logger = None) -> List[float]:
     # Evaluate ensemble on test set
     avg_test_preds = (sum_test_preds / args.ensemble_size).tolist()
 
+    if args.gaussian:
+        avg_last_hidden = sum_last_hidden / args.ensemble_size
+
+        if args.dataset_type == 'regression':
+            gaussian = GaussianProcessRegressor.fit(avg_last_hidden, train_targets)
+        else:
+            gaussian = GaussianProcessClassifier.fit(avg_last_hidden, train_targets)
+
+        gaussian_predictions = gaussian.predict(avg_test_preds)
+
+        with open(os.path.join(args.save_dir, 'gaussian.pickle'), 'wb') as handle:
+            pickle.dump(gaussian, handle)
+
+
     ensemble_scores = evaluate_predictions(
-        preds=avg_test_preds,
+        preds=gaussian_predictions if args.gaussian else avg_test_preds,
         targets=test_targets,
         num_tasks=args.num_tasks,
         metric_func=metric_func,
         dataset_type=args.dataset_type,
         logger=logger
     )
+
 
     # Average ensemble score
     avg_ensemble_test_score = np.nanmean(ensemble_scores)
