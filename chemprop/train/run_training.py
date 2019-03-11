@@ -7,6 +7,8 @@ from typing import List
 
 import numpy as np
 from sklearn.gaussian_process import GaussianProcessClassifier, GaussianProcessRegressor
+from sklearn.gaussian_process.kernels import WhiteKernel
+
 from tensorboardX import SummaryWriter
 import torch
 from tqdm import trange
@@ -139,6 +141,7 @@ def run_training(args: Namespace, logger: Logger = None) -> List[float]:
 
     if args.gaussian:
         sum_last_hidden = np.zeros((len(train_smiles), args.ffn_hidden_size))
+        sum_last_hidden_test = np.zeros((len(test_smiles), args.ffn_hidden_size))
 
     # Train ensemble of models
     for model_idx in range(args.ensemble_size):
@@ -241,8 +244,24 @@ def run_training(args: Namespace, logger: Logger = None) -> List[float]:
 
         if args.gaussian:
             model.eval()
-            last_hidden = model.last_hidden(train_data)
+            model.use_last_hidden = False
+            last_hidden = predict(
+                model=model,
+                data=train_data,
+                batch_size=args.batch_size,
+                scaler=scaler
+            )
+
             sum_last_hidden += np.array(last_hidden)
+
+            last_hidden_test = predict(
+                model=model,
+                data=test_data,
+                batch_size=args.batch_size,
+                scaler=scaler
+            )
+
+            sum_last_hidden_test += np.array(last_hidden_test)
 
         # Average test score
         avg_test_score = np.nanmean(test_scores)
@@ -256,24 +275,32 @@ def run_training(args: Namespace, logger: Logger = None) -> List[float]:
                 writer.add_scalar(f'test_{task_name}_{args.metric}', test_score, n_iter)
 
     # Evaluate ensemble on test set
-    avg_test_preds = (sum_test_preds / args.ensemble_size).tolist()
+    avg_test_preds = (sum_test_preds / args.ensemble_size)
 
     if args.gaussian:
         avg_last_hidden = sum_last_hidden / args.ensemble_size
 
         if args.dataset_type == 'regression':
-            gaussian = GaussianProcessRegressor.fit(avg_last_hidden, train_targets)
+            gaussian = GaussianProcessRegressor(kernel=WhiteKernel()).fit(avg_last_hidden, train_data.targets())
         else:
-            gaussian = GaussianProcessClassifier.fit(avg_last_hidden, train_targets)
+            gaussian = GaussianProcessClassifier(kernel=WhiteKernel()).fit(avg_last_hidden, train_data.targets())
 
-        avg_test_preds = gaussian.predict(avg_test_preds)
+        # import pdb; pdb.set_trace()
 
+        avg_test_preds, avg_test_std = gaussian.predict(sum_last_hidden_test / args.ensemble_size, return_std=True)
+        avg_test_preds = scaler.inverse_transform(avg_test_preds)
+        from pprint import pprint
+
+        pprint(train_targets)
+        pprint(np.mean(train_data.targets()))
+        pprint(np.std(train_data.targets()))
+        pprint(list(zip(avg_test_preds, avg_test_std, test_targets)))
         with open(os.path.join(args.save_dir, 'gaussian.pickle'), 'wb') as handle:
             pickle.dump(gaussian, handle)
 
 
     ensemble_scores = evaluate_predictions(
-        preds=avg_test_preds,
+        preds=avg_test_preds.tolist(),
         targets=test_targets,
         num_tasks=args.num_tasks,
         metric_func=metric_func,

@@ -6,17 +6,12 @@ import torch.nn as nn
 from .mpn import MPN
 from chemprop.nn_utils import get_activation_function, initialize_weights
 
-class MoleculeModelEnsemble(nn.Module):
-    def __init__(self, ensemble_size: int, classification: bool, gaussian: bool):
-        super(MoleculeModelEnsemble, self).__init__()
 
-        self.models = [MoleculeModel(classification) for _ in range(ensemble_size)]
-        self.gaussian = GaussianProcessClassifier() if classification else GaussianProcessRegressor()
 
 class MoleculeModel(nn.Module):
     """A MoleculeModel is a model which contains a message passing network following by feed-forward layers."""
 
-    def __init__(self, classification: bool):
+    def __init__(self, classification: bool, gaussian: bool = False):
         """
         Initializes the MoleculeModel.
 
@@ -26,10 +21,16 @@ class MoleculeModel(nn.Module):
 
         self.classification = classification
 
+        if gaussian:
+            if self.classification:
+                self.gaussian = GaussianProcessClassifier()
+            else:
+                self.gaussian = GaussianProcessRegressor()
+
         if self.classification:
             self.sigmoid = nn.Sigmoid()
 
-        self.use_last_layer = True
+        self.use_last_hidden = True
 
     def create_encoder(self, args: Namespace):
         """
@@ -85,11 +86,11 @@ class MoleculeModel(nn.Module):
         :param input: Input.
         :return: The output of the MoleculeModel.
         """
-        ffn = self.ffn if self.use_last_layer else list(self.ffn.children()[:-1])
+        ffn = self.ffn if self.use_last_hidden else nn.Sequential(*list(self.ffn.children())[:-1])
         output = ffn(self.encoder(*input))
 
         # Don't apply sigmoid during training b/c using BCEWithLogitsLoss
-        if self.classification and not self.training and self.use_last_layer:
+        if self.classification and not self.training and self.use_last_hidden:
             output = self.sigmoid(output)
 
         return output
