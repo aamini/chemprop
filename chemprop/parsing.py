@@ -163,6 +163,8 @@ def add_train_args(parser: ArgumentParser):
                         help='Use messages on atoms instead of messages on bonds')
     parser.add_argument('--gaussian', action='store_true', default=False,
                         help='Use a gaussian process instead of the models last layer to predict.')
+    parser.add_argument('--last_hidden_size', type=int, default=30,
+                        help='Size of last hidden layer.')
 
 
 def update_checkpoint_args(args: Namespace):

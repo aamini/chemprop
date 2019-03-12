@@ -64,16 +64,23 @@ class MoleculeModel(nn.Module):
                 dropout,
                 nn.Linear(first_linear_dim, args.ffn_hidden_size)
             ]
-            for _ in range(args.ffn_num_layers - 2):
+            for _ in range(args.ffn_num_layers - 3):
                 ffn.extend([
                     activation,
                     dropout,
                     nn.Linear(args.ffn_hidden_size, args.ffn_hidden_size),
                 ])
+
             ffn.extend([
                 activation,
                 dropout,
-                nn.Linear(args.ffn_hidden_size, args.output_size),
+                nn.Linear(args.ffn_hidden_size, args.last_hidden_size),
+            ])
+
+            ffn.extend([
+                activation,
+                dropout,
+                nn.Linear(args.last_hidden_size, args.output_size),
             ])
 
         # Create FFN model

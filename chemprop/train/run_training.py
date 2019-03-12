@@ -7,7 +7,7 @@ from typing import List
 
 import numpy as np
 from sklearn.gaussian_process import GaussianProcessClassifier, GaussianProcessRegressor
-from sklearn.gaussian_process.kernels import WhiteKernel
+from sklearn.gaussian_process.kernels import DotProduct, WhiteKernel
 
 from tensorboardX import SummaryWriter
 import torch
@@ -140,8 +140,8 @@ def run_training(args: Namespace, logger: Logger = None) -> List[float]:
     sum_test_preds = np.zeros((len(test_smiles), args.num_tasks))
 
     if args.gaussian:
-        sum_last_hidden = np.zeros((len(train_smiles), args.ffn_hidden_size))
-        sum_last_hidden_test = np.zeros((len(test_smiles), args.ffn_hidden_size))
+        sum_last_hidden = np.zeros((len(train_smiles), args.last_hidden_size))
+        sum_last_hidden_test = np.zeros((len(test_smiles), args.last_hidden_size))
 
     # Train ensemble of models
     for model_idx in range(args.ensemble_size):
@@ -281,9 +281,9 @@ def run_training(args: Namespace, logger: Logger = None) -> List[float]:
         avg_last_hidden = sum_last_hidden / args.ensemble_size
 
         if args.dataset_type == 'regression':
-            gaussian = GaussianProcessRegressor(kernel=WhiteKernel()).fit(avg_last_hidden, train_data.targets())
+            gaussian = GaussianProcessRegressor(kernel=(DotProduct()+WhiteKernel())).fit(avg_last_hidden, train_data.targets())
         else:
-            gaussian = GaussianProcessClassifier(kernel=WhiteKernel()).fit(avg_last_hidden, train_data.targets())
+            gaussian = GaussianProcessClassifier(kernel=(DotProduct()+WhiteKernel())).fit(avg_last_hidden, train_data.targets())
 
         # import pdb; pdb.set_trace()
 
