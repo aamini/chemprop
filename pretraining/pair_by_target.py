@@ -39,11 +39,15 @@ def create_pairs(data: MoleculeDataset,
     # Sample pairs
     positive_pairs = []
     for target in tqdm(positive_pair_targets, total=num_positive_pairs):
+        if len(ones[target]) < 2:
+            continue
         i, j = np.random.choice(ones[target], size=2, replace=False)
         positive_pairs.append((smiles[i], smiles[j]))
 
     negative_pairs = []
     for target in tqdm(negative_pair_targets, total=num_negative_pairs):
+        if len(zeros[target]) == 0 or len(ones[target]) == 0:
+            continue
         i = np.random.choice(zeros[target])
         j = np.random.choice(ones[target])
         negative_pairs.append((smiles[i], smiles[j]))
