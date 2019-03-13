@@ -7,7 +7,7 @@ from typing import List
 
 import numpy as np
 from sklearn.gaussian_process import GaussianProcessClassifier, GaussianProcessRegressor
-from sklearn.gaussian_process.kernels import DotProduct, WhiteKernel,Exponentiation
+from sklearn.gaussian_process.kernels import DotProduct, WhiteKernel, RBF, RationalQuadratic, PairwiseKernel, ConstantKernel as C
 
 from tensorboardX import SummaryWriter
 import torch
@@ -277,49 +277,55 @@ def run_training(args: Namespace, logger: Logger = None) -> List[float]:
     # Evaluate ensemble on test set
     avg_test_preds = (sum_test_preds / args.ensemble_size)
 
+    import matplotlib.pyplot as plt
     if args.gaussian:
         avg_last_hidden = sum_last_hidden / args.ensemble_size
+        c1 = C(np.std(train_data.targets()))
+        for kernel in [DotProduct(), DotProduct() + WhiteKernel() * c1, RBF(), RBF() + WhiteKernel() * c1, RationalQuadratic(), RationalQuadratic() + WhiteKernel() * c1, PairwiseKernel(), PairwiseKernel() + WhiteKernel() * c1, PairwiseKernel() * c1][-3:]:
 
-        if args.dataset_type == 'regression':
-            gaussian = GaussianProcessRegressor(kernel=(WhiteKernel())).fit(avg_last_hidden, train_data.targets())
-        else:
-            gaussian = GaussianProcessClassifier(kernel=(WhiteKernel())).fit(avg_last_hidden, train_data.targets())
+            if args.dataset_type == 'regression':
+                gaussian = GaussianProcessRegressor(kernel=kernel).fit(avg_last_hidden, train_data.targets())
+            else:
+                gaussian = GaussianProcessClassifier(kernel=kernel).fit(avg_last_hidden, train_data.targets())
 
-        # import pdb; pdb.set_trace()
+            # import pdb; pdb.set_trace()
 
-        avg_test_preds, avg_test_std = gaussian.predict(sum_last_hidden_test / args.ensemble_size, return_std=True)
-        avg_test_preds = scaler.inverse_transform(avg_test_preds)
-        from pprint import pprint
+            avg_test_preds, avg_test_std = gaussian.predict(sum_last_hidden_test / args.ensemble_size, return_std=True)
+            avg_test_preds = scaler.inverse_transform(avg_test_preds)
+            from pprint import pprint
 
-        pprint(train_targets)
-        pprint(np.mean(train_data.targets()))
-        pprint(np.std(train_data.targets()))
-        pprint(list(zip(avg_test_preds, avg_test_std, test_targets)))
-        with open(os.path.join(args.save_dir, 'gaussian.pickle'), 'wb') as handle:
-            pickle.dump(gaussian, handle)
+            # pprint(train_targets)
+            # pprint(np.mean(train_data.targets()))
+            # pprint(np.std(train_data.targets()))
+            # pprint(list(zip(avg_test_preds, avg_test_std, test_targets)))
+            with open(os.path.join(args.save_dir, 'gaussian.pickle'), 'wb') as handle:
+                pickle.dump(gaussian, handle)
 
-        import matplotlib.pyplot as plt
-        x = avg_test_std
-        y = abs(np.array([i[0] for i in avg_test_preds]) - np.array([i[0] for i in test_targets]))
-        plt.plot(x, y, 'ro')
-        terms = np.polyfit(x, y, 1)
-        plt.plot(avg_test_std, terms[0] * avg_test_std + terms[1])
-        plt.show()
+            x = avg_test_std
+            y = np.array([i[0] for i in avg_test_preds]) - np.array([i[0] for i in test_targets])
+            y = y * y
+            plt.plot(x, y, 'ro')
+            terms = np.polyfit(x, y, 2)
 
-    ensemble_scores = evaluate_predictions(
-        preds=avg_test_preds.tolist(),
-        targets=test_targets,
-        num_tasks=args.num_tasks,
-        metric_func=metric_func,
-        dataset_type=args.dataset_type,
-        logger=logger
-    )
+            pprint(terms)
+            s = np.sort(avg_test_std)
+            plt.plot(s, terms[0] * s**2 + terms[1] * s + terms[2])
+            plt.show()
+
+            ensemble_scores = evaluate_predictions(
+                preds=avg_test_preds.tolist(),
+                targets=test_targets,
+                num_tasks=args.num_tasks,
+                metric_func=metric_func,
+                dataset_type=args.dataset_type,
+                logger=logger
+            )
 
 
-    # Average ensemble score
-    avg_ensemble_test_score = np.nanmean(ensemble_scores)
-    info(f'Ensemble test {args.metric} = {avg_ensemble_test_score:.6f}')
-    writer.add_scalar(f'ensemble_test_{args.metric}', avg_ensemble_test_score, 0)
+            # Average ensemble score
+            avg_ensemble_test_score = np.nanmean(ensemble_scores)
+            info(f'Ensemble test {args.metric} = {avg_ensemble_test_score:.6f}')
+            writer.add_scalar(f'ensemble_test_{args.metric}', avg_ensemble_test_score, 0)
 
     # Individual ensemble scores
     if args.show_individual_scores:
