@@ -7,7 +7,7 @@ from typing import List
 
 import numpy as np
 from sklearn.gaussian_process import GaussianProcessClassifier, GaussianProcessRegressor
-from sklearn.gaussian_process.kernels import DotProduct, WhiteKernel
+from sklearn.gaussian_process.kernels import DotProduct, WhiteKernel,Exponentiation
 
 from tensorboardX import SummaryWriter
 import torch
@@ -281,9 +281,9 @@ def run_training(args: Namespace, logger: Logger = None) -> List[float]:
         avg_last_hidden = sum_last_hidden / args.ensemble_size
 
         if args.dataset_type == 'regression':
-            gaussian = GaussianProcessRegressor(kernel=(DotProduct()+WhiteKernel())).fit(avg_last_hidden, train_data.targets())
+            gaussian = GaussianProcessRegressor(kernel=(WhiteKernel())).fit(avg_last_hidden, train_data.targets())
         else:
-            gaussian = GaussianProcessClassifier(kernel=(DotProduct()+WhiteKernel())).fit(avg_last_hidden, train_data.targets())
+            gaussian = GaussianProcessClassifier(kernel=(WhiteKernel())).fit(avg_last_hidden, train_data.targets())
 
         # import pdb; pdb.set_trace()
 
@@ -298,6 +298,13 @@ def run_training(args: Namespace, logger: Logger = None) -> List[float]:
         with open(os.path.join(args.save_dir, 'gaussian.pickle'), 'wb') as handle:
             pickle.dump(gaussian, handle)
 
+        import matplotlib.pyplot as plt
+        x = avg_test_std
+        y = abs(np.array([i[0] for i in avg_test_preds]) - np.array([i[0] for i in test_targets]))
+        plt.plot(x, y, 'ro')
+        terms = np.polyfit(x, y, 1)
+        plt.plot(avg_test_std, terms[0] * avg_test_std + terms[1])
+        plt.show()
 
     ensemble_scores = evaluate_predictions(
         preds=avg_test_preds.tolist(),
