@@ -14,6 +14,7 @@ import torch
 from tqdm import trange
 import pickle
 from torch.optim.lr_scheduler import ExponentialLR
+import GPy
 
 from .evaluate import evaluate, evaluate_predictions
 from .predict import predict
@@ -138,9 +139,10 @@ def run_training(args: Namespace, logger: Logger = None) -> List[float]:
     # Set up test set evaluation
     test_smiles, test_targets = test_data.smiles(), test_data.targets()
     sum_test_preds = np.zeros((len(test_smiles), args.num_tasks))
+    all_test_preds = np.zeros((len(test_smiles), args.num_tasks, args.ensemble_size))
 
     if args.gaussian:
-        sum_last_hidden = np.zeros((len(train_smiles), args.last_hidden_size))
+        sum_last_hidden = np.zeros((len(val_data.smiles()), args.last_hidden_size))
         sum_last_hidden_test = np.zeros((len(test_smiles), args.last_hidden_size))
 
     # Train ensemble of models
@@ -241,13 +243,14 @@ def run_training(args: Namespace, logger: Logger = None) -> List[float]:
 
         if len(test_preds) != 0:
             sum_test_preds += np.array(test_preds)
+            all_test_preds[:, :, model_idx] = np.array(test_preds)
 
         if args.gaussian:
             model.eval()
             model.use_last_hidden = False
             last_hidden = predict(
                 model=model,
-                data=train_data,
+                data=val_data,
                 batch_size=args.batch_size,
                 scaler=scaler
             )
@@ -278,42 +281,48 @@ def run_training(args: Namespace, logger: Logger = None) -> List[float]:
     avg_test_preds = (sum_test_preds / args.ensemble_size)
 
     import matplotlib.pyplot as plt
+    from pprint import pprint
+
     if args.gaussian:
+        GPy.plotting.change_plotting_library('plotly')
+        kernel = GPy.kern.Linear(input_dim=args.last_hidden_size)
+
         avg_last_hidden = sum_last_hidden / args.ensemble_size
         c1 = C(np.std(train_data.targets()))
-        for kernel in [DotProduct(), DotProduct() + WhiteKernel() * c1, RBF(), RBF() + WhiteKernel() * c1, RationalQuadratic(), RationalQuadratic() + WhiteKernel() * c1, PairwiseKernel(), PairwiseKernel() + WhiteKernel() * c1, PairwiseKernel() * c1][-3:]:
-
+        # for kernel in [DotProduct(), DotProduct() + WhiteKernel() * c1]:
+        for _ in [""]:
             if args.dataset_type == 'regression':
-                gaussian = GaussianProcessRegressor(kernel=kernel).fit(avg_last_hidden, train_data.targets())
-            else:
-                gaussian = GaussianProcessClassifier(kernel=kernel).fit(avg_last_hidden, train_data.targets())
+                # gaussian = GaussianProcessRegressor(kernel=kernel).fit(avg_last_hidden, train_data.targets())
+                gaussian = GPy.models.GPRegression(avg_last_hidden, scaler.transform(np.array(val_data.targets())), kernel)
+                gaussian.optimize()
 
-            # import pdb; pdb.set_trace()
-
-            avg_test_preds, avg_test_std = gaussian.predict(sum_last_hidden_test / args.ensemble_size, return_std=True)
-            avg_test_preds = scaler.inverse_transform(avg_test_preds)
-            from pprint import pprint
+            avg_test_preds, avg_test_var = gaussian.predict(sum_last_hidden_test / args.ensemble_size)
+            transformed_targets = scaler.transform(test_targets)
+            # avg_test_preds = scaler.inverse_transform(avg_test_preds)
 
             # pprint(train_targets)
             # pprint(np.mean(train_data.targets()))
             # pprint(np.std(train_data.targets()))
-            # pprint(list(zip(avg_test_preds, avg_test_std, test_targets)))
+            pprint(list(zip(avg_test_preds, avg_test_var, transformed_targets)))
             with open(os.path.join(args.save_dir, 'gaussian.pickle'), 'wb') as handle:
                 pickle.dump(gaussian, handle)
 
-            x = avg_test_std
-            y = np.array([i[0] for i in avg_test_preds]) - np.array([i[0] for i in test_targets])
+            x = np.array([item[0] for item in avg_test_var])
+            y = np.array([i[0] for i in avg_test_preds]) - np.array([i[0] for i in transformed_targets])
             y = y * y
+
+            pprint(x)
+            pprint(y)
             plt.plot(x, y, 'ro')
-            terms = np.polyfit(x, y, 2)
+            terms = np.polyfit(x, y, 1)
 
             pprint(terms)
-            s = np.sort(avg_test_std)
-            plt.plot(s, terms[0] * s**2 + terms[1] * s + terms[2])
+            s = np.sort(avg_test_var)
+            plt.plot(s, terms[0] * s + terms[1])
             plt.show()
 
             ensemble_scores = evaluate_predictions(
-                preds=avg_test_preds.tolist(),
+                preds=scaler.inverse_transform(avg_test_preds).tolist(),
                 targets=test_targets,
                 num_tasks=args.num_tasks,
                 metric_func=metric_func,
@@ -326,6 +335,19 @@ def run_training(args: Namespace, logger: Logger = None) -> List[float]:
             avg_ensemble_test_score = np.nanmean(ensemble_scores)
             info(f'Ensemble test {args.metric} = {avg_ensemble_test_score:.6f}')
             writer.add_scalar(f'ensemble_test_{args.metric}', avg_ensemble_test_score, 0)
+    else:
+        x = [item[0] for item in np.std(all_test_preds, axis=2)]
+        y = np.array([i[0] for i in avg_test_preds]) - np.array([i[0] for i in test_targets])
+        y = y * y
+        plt.plot(x*x, y, 'ro')
+
+        terms = np.polyfit(x*x, y, 1)
+
+        pprint(terms)
+        s = np.sort(x*x)
+        plt.plot(s, terms[0] * s+ terms[1] * s)
+
+        plt.show()
 
     # Individual ensemble scores
     if args.show_individual_scores:
