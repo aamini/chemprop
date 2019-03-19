@@ -324,7 +324,7 @@ def run_training(args: Namespace, logger: Logger = None) -> List[float]:
             ys = [val[1] for val in sorted_vals[i-args.confidence[0]:i]]
             y_sum = 0
             for j in range(args.confidence[2]):
-                y_sum += sorted(np.random.choice(ys, args.confidence[1]))[-int(args.confidence[1])/20]
+                y_sum += sorted(np.random.choice(ys, args.confidence[1]))[-int(args.confidence[1]/20)]
 
             y_confidence.append(y_sum / args.confidence[2])
             sum_subset -= sorted_vals[i-args.confidence[0]][0]
