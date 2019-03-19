@@ -165,6 +165,8 @@ def add_train_args(parser: ArgumentParser):
                         help='Use a gaussian process instead of the models last layer to predict.')
     parser.add_argument('--last_hidden_size', type=int, default=30,
                         help='Size of last hidden layer.')
+    parser.add_argument('--confidence', type=int, nargs=3, default=[100, 20, 100],
+                        help='Confidence sample sizes.')
 
 
 def update_checkpoint_args(args: Namespace):

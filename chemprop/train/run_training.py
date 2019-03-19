@@ -6,8 +6,6 @@ from pprint import pformat
 from typing import List
 
 import numpy as np
-from sklearn.gaussian_process import GaussianProcessClassifier, GaussianProcessRegressor
-from sklearn.gaussian_process.kernels import DotProduct, WhiteKernel, RBF, RationalQuadratic, PairwiseKernel, ConstantKernel as C
 
 from tensorboardX import SummaryWriter
 import torch
@@ -280,41 +278,6 @@ def run_training(args: Namespace, logger: Logger = None) -> List[float]:
     # Evaluate ensemble on test set
     avg_test_preds = (sum_test_preds / args.ensemble_size)
 
-    import matplotlib.pyplot as plt
-    from pprint import pprint
-
-    if args.gaussian and args.dataset_type == 'regression':
-        kernel = GPy.kern.Linear(input_dim=args.last_hidden_size)
-
-        avg_last_hidden = sum_last_hidden / args.ensemble_size
-
-        gaussian = GPy.models.GPRegression(avg_last_hidden, scaler.transform(np.array(val_data.targets())), kernel)
-        gaussian.optimize()
-
-        avg_test_preds, avg_test_var = gaussian.predict(sum_last_hidden_test / args.ensemble_size)
-        transformed_targets = scaler.transform(test_targets)
-
-        # pprint(train_targets)
-        # pprint(np.mean(train_data.targets()))
-        # pprint(np.std(train_data.targets()))
-        pprint(list(zip(avg_test_preds, avg_test_var, transformed_targets)))
-
-        x = np.array([i[0] for i in avg_test_var])
-        y = np.array([i[0] for i in avg_test_preds]) - np.array([i[0] for i in transformed_targets])
-        y = y * y
-
-        pprint(x)
-        pprint(y)
-        plt.plot(x, y, 'ro')
-        terms = np.polyfit(x, y, 1)
-
-        pprint(terms)
-        s = np.sort(x)
-        plt.plot(s, terms[0] * s + terms[1])
-        plt.show()
-
-        avg_test_preds = scaler.inverse_transform(avg_test_preds)
-
     ensemble_scores = evaluate_predictions(
         preds=avg_test_preds.tolist(),
         targets=test_targets,
@@ -323,12 +286,77 @@ def run_training(args: Namespace, logger: Logger = None) -> List[float]:
         dataset_type=args.dataset_type,
         logger=logger
     )
-
-
     # Average ensemble score
     avg_ensemble_test_score = np.nanmean(ensemble_scores)
     info(f'Ensemble test {args.metric} = {avg_ensemble_test_score:.6f}')
     writer.add_scalar(f'ensemble_test_{args.metric}', avg_ensemble_test_score, 0)
+
+    import matplotlib.pyplot as plt
+
+    if args.gaussian and args.dataset_type == 'regression':
+        kernel = GPy.kern.Linear(input_dim=args.last_hidden_size)
+
+        avg_last_hidden = sum_last_hidden / args.ensemble_size
+        avg_last_hidden_test = sum_last_hidden_test / args.ensemble_size
+        transformed_targets = scaler.transform(test_targets)
+
+        transformed_val = scaler.transform(np.array(val_data.targets()))
+        gaussian = GPy.models.GPRegression(avg_last_hidden, transformed_val, kernel)
+        gaussian.optimize()
+
+        avg_test_preds, avg_test_var = gaussian.predict(avg_last_hidden_test[:])
+        avg_test_var = np.log(avg_test_var - np.min(avg_test_var) + np.exp(-10)) * (-1)
+        x = np.array([i[0] for i in avg_test_var])
+        y = np.array([i[0] for i in avg_test_preds]) - np.array([i[0] for i in transformed_targets[:]])
+        y = y * y
+        plt.plot(x, y, 'ro')
+
+        sorted_vals = sorted(list(zip(x, y)), key= lambda val: val[0])
+
+        sum_subset = sum([val[0] for val in sorted_vals[:args.confidence[0]]])
+
+        x_confidence = []
+        y_confidence = []
+
+        for i in range(args.confidence[0], len(sorted_vals)):
+            x_confidence.append(sum_subset/args.confidence[0])
+
+            ys = [val[1] for val in sorted_vals[i-args.confidence[0]:i]]
+            y_sum = 0
+            for j in range(args.confidence[2]):
+                y_sum += sorted(np.random.choice(ys, args.confidence[1]))[-int(args.confidence[1])/20]
+
+            y_confidence.append(y_sum / args.confidence[2])
+            sum_subset -= sorted_vals[i-args.confidence[0]][0]
+            sum_subset += sorted_vals[i][0]
+
+        plt.plot(x_confidence, y_confidence)
+
+        # BEST FIT LINE
+        # terms = np.polyfit(x, y, 1)
+        #
+        # pprint(terms)
+        # s = np.sort(x)
+        # plt.plot(s, terms[0] * s + terms[1])
+
+        plt.show()
+
+        avg_test_preds = scaler.inverse_transform(avg_test_preds)
+
+        ensemble_scores = evaluate_predictions(
+            preds=avg_test_preds.tolist(),
+            targets=test_targets,
+            num_tasks=args.num_tasks,
+            metric_func=metric_func,
+            dataset_type=args.dataset_type,
+            logger=logger
+        )
+
+
+        # Average ensemble score
+        avg_ensemble_test_score = np.nanmean(ensemble_scores)
+        info(f'Ensemble test {args.metric} = {avg_ensemble_test_score:.6f}')
+        writer.add_scalar(f'ensemble_test_{args.metric}', avg_ensemble_test_score, 0)
 
     # Individual ensemble scores
     if args.show_individual_scores:
