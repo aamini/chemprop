@@ -82,7 +82,8 @@ class MoleculeModel(nn.Module):
     def forward(self,
                 batch: Union[List[str], BatchMolGraph],
                 features_batch: List[np.ndarray] = None,
-                batch_2: Union[List[str], BatchMolGraph] = None) -> torch.Tensor:
+                batch_2: Union[List[str], BatchMolGraph] = None,
+                encoder_rep_only: bool = False) -> torch.Tensor:
         """
         Runs the MoleculeModel on input.
 
@@ -90,9 +91,13 @@ class MoleculeModel(nn.Module):
         :param features_batch: A list of ndarrays containing additional features.
         :param batch_2: A list of SMILES strings or a BatchMolGraph (if self.graph_input is True).
         Only used for siamese network.
+        :param encoder_rep_only: Whether to just return the encoder output representation for use elsewhere.
         :return: The output of the MoleculeModel, a 1D torch tensor of length batch_size.
         """
-        output = self.ffn(self.encoder(batch, features_batch))
+        encoder_output = self.encoder(batch, features_batch)
+        if encoder_rep_only:
+            return encoder_output
+        output = self.ffn(encoder_output)
 
         if self.siamese:
             output_2 = self.ffn(self.encoder(batch_2))
