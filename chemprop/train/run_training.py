@@ -5,8 +5,8 @@ import os
 from pprint import pformat
 from typing import List
 
+import matplotlib.pyplot as plt
 import numpy as np
-
 from tensorboardX import SummaryWriter
 import torch
 from tqdm import trange
@@ -291,8 +291,6 @@ def run_training(args: Namespace, logger: Logger = None) -> List[float]:
     info(f'Ensemble test {args.metric} = {avg_ensemble_test_score:.6f}')
     writer.add_scalar(f'ensemble_test_{args.metric}', avg_ensemble_test_score, 0)
 
-    import matplotlib.pyplot as plt
-
     if args.gaussian and args.dataset_type == 'regression':
         kernel = GPy.kern.Linear(input_dim=args.last_hidden_size)
 
@@ -305,41 +303,102 @@ def run_training(args: Namespace, logger: Logger = None) -> List[float]:
         gaussian.optimize()
 
         avg_test_preds, avg_test_var = gaussian.predict(avg_last_hidden_test[:])
-        avg_test_var = np.log(avg_test_var - np.min(avg_test_var) + np.exp(-10)) * (-1)
+
+        # Scale Data
+        domain = np.max(avg_test_var) - np.min(avg_test_var)
+        avg_test_var = avg_test_var - np.min(avg_test_var)                  # Shift.
+        avg_test_var = avg_test_var / domain                                # Scale domain to 1.
+        avg_test_var = np.maximum(0, -np.log(avg_test_var + np.exp(-10)))   # Apply log scale and flip.
+
         x = np.array([i[0] for i in avg_test_var])
         y = np.array([i[0] for i in avg_test_preds]) - np.array([i[0] for i in transformed_targets[:]])
-        y = y * y
+        y = np.abs(y)
+
         plt.plot(x, y, 'ro')
 
-        sorted_vals = sorted(list(zip(x, y)), key= lambda val: val[0])
+        sorted_pairs = sorted(list(zip(x, y)), key=lambda pair: pair[0])
 
-        sum_subset = sum([val[0] for val in sorted_vals[:args.confidence[0]]])
+        if args.confidence:
+            # Perform Bootstrapping at 95% confidence.
+            sum_subset = sum([val[0] for val in sorted_pairs[:args.bootstrap[0]]])
 
-        x_confidence = []
-        y_confidence = []
+            x_confidence = []
+            y_confidence = []
 
-        for i in range(args.confidence[0], len(sorted_vals)):
-            x_confidence.append(sum_subset/args.confidence[0])
+            for i in range(args.bootstrap[0], len(sorted_pairs)):
+                x_confidence.append(sum_subset/args.bootstrap[0])
 
-            ys = [val[1] for val in sorted_vals[i-args.confidence[0]:i]]
-            y_sum = 0
-            for j in range(args.confidence[2]):
-                y_sum += sorted(np.random.choice(ys, args.confidence[1]))[-int(args.confidence[1]/20)]
+                ys = [val[1] for val in sorted_pairs[i-args.bootstrap[0]:i]]
+                y_sum = 0
+                for j in range(args.bootstrap[2]):
+                    y_sum += sorted(np.random.choice(ys, args.bootstrap[1]))[-int(args.bootstrap[1]/20)]
 
-            y_confidence.append(y_sum / args.confidence[2])
-            sum_subset -= sorted_vals[i-args.confidence[0]][0]
-            sum_subset += sorted_vals[i][0]
+                y_confidence.append(y_sum / args.bootstrap[2])
+                sum_subset -= sorted_pairs[i-args.bootstrap[0]][0]
+                sum_subset += sorted_pairs[i][0]
 
-        plt.plot(x_confidence, y_confidence)
+            plt.plot(x_confidence, y_confidence)
 
-        # BEST FIT LINE
+        plt.show()
+
+        if args.confidence:
+            scale = np.average(y) * 5
+
+            for i in range(5):
+                errors = []
+                for pair in sorted_pairs:
+                    if pair[0] < 2 * i or pair[0] > 2 * (i + 1):
+                        continue
+                    errors.append(pair[1])
+                plt.hist(errors, bins=10, range=(0, scale))
+                plt.show()
+
+        if args.joined_confidence:
+            bins = 8
+            scale = np.average(y) * bins / 2
+
+            errors_by_confidence = [[] for _ in range(10)]
+            for pair in sorted_pairs:
+                if pair[0] == 10:
+                    continue
+
+                errors_by_confidence[int(pair[0])].append(pair[1])
+
+            errors_by_bin = [[] for _ in range(bins)]
+            for interval in errors_by_confidence:
+                error_counts, _ = np.histogram(np.minimum(interval, scale), bins=bins)
+                for i in range(bins):
+                    if len(interval) == 0:
+                        errors_by_bin[i].append(0)
+                    else:
+                        errors_by_bin[i].append(error_counts[i] / len(interval) * 100)
+
+            colors = ['green', 'yellow', 'orange', 'red', 'purple', 'blue', 'brown', 'black']
+            sum_heights = [0 for _ in range(10)]
+            for i in range(bins):
+                label = f'Error of {i * scale / bins} to {(i + 1) * scale / bins}'
+
+                if i == bins - 1:
+                    label = f'Error {i * scale / bins} +'
+                plt.bar(list(range(10)), errors_by_bin[i], color=colors[i], bottom=sum_heights, label=label)
+                sum_heights = [sum_heights[j] + errors_by_bin[i][j] for j in range(10)]
+
+            names = (f'{i} to {i+1} \n {len(errors_by_confidence[i])} points' for i in range(10))
+            plt.xticks(list(range(10)), names)
+            plt.xlabel("Confidence")
+            plt.ylabel("Percent of Test Points")
+            plt.legend()
+
+            plt.show()
+
+
+        # Plot line of best fit.
         # terms = np.polyfit(x, y, 1)
         #
         # pprint(terms)
         # s = np.sort(x)
         # plt.plot(s, terms[0] * s + terms[1])
 
-        plt.show()
 
         avg_test_preds = scaler.inverse_transform(avg_test_preds)
 
