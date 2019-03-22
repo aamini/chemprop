@@ -82,20 +82,22 @@ class MoleculeModel(nn.Module):
     def forward(self,
                 batch: Union[List[str], BatchMolGraph],
                 features_batch: List[np.ndarray] = None,
+                node_features_batch: List[np.ndarray] = None,
                 batch_2: Union[List[str], BatchMolGraph] = None,
-                encoder_rep_only: bool = False) -> torch.Tensor:
+                output_type: str = 'full') -> torch.Tensor:
         """
         Runs the MoleculeModel on input.
 
         :param batch: A list of SMILES strings or a BatchMolGraph (if self.graph_input is True).
         :param features_batch: A list of ndarrays containing additional features.
+        :param node_features_batch: A list of ndarrays containing additional node-level features.
         :param batch_2: A list of SMILES strings or a BatchMolGraph (if self.graph_input is True).
         Only used for siamese network.
-        :param encoder_rep_only: Whether to just return the encoder output representation for use elsewhere.
+        :param output_type: What to output; specify 'node_final' or 'encoder' for intermediate outputs.
         :return: The output of the MoleculeModel, a 1D torch tensor of length batch_size.
         """
-        encoder_output = self.encoder(batch, features_batch)
-        if encoder_rep_only:
+        encoder_output = self.encoder(batch, features_batch, node_features_batch, return_node_representations=(output_type=='node_final'))
+        if output_type == 'encoder' or output_type == 'node_final':
             return encoder_output
         output = self.ffn(encoder_output)
 
@@ -123,7 +125,7 @@ def build_model(args: Namespace) -> nn.Module:
 
     model = MoleculeModel(
         classification=args.dataset_type == 'classification',
-        siamese=args.siamese
+        siamese=args.siamese if hasattr(args, 'siamese') else False
     )
     model.create_encoder(args)
     model.create_ffn(args)

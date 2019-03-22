@@ -30,14 +30,14 @@ def predict(model: nn.Module,
     for i in trange(0, num_iters, iter_step):
         # Prepare batch
         mol_batch = MoleculeDataset(data[i:i + batch_size])
-        smiles_batch, features_batch = mol_batch.smiles(), mol_batch.features()
+        smiles_batch, features_batch, node_features_batch = mol_batch.smiles(), mol_batch.features(), mol_batch.node_features()
         smiles_2_batch = mol_batch.smiles_2() if model.siamese else None
 
         # Run model
         batch = smiles_batch
 
         with torch.no_grad():
-            batch_preds = model(batch, features_batch, smiles_2_batch)
+            batch_preds = model(batch, features_batch, node_features_batch, batch_2=smiles_2_batch)
 
         batch_preds = batch_preds.data.cpu().numpy()
 

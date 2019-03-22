@@ -120,6 +120,10 @@ def get_data(path: str,
         features_data = np.concatenate(features_data, axis=1)
     else:
         features_data = None
+    
+    if args.node_features_path is not None:
+        with open(args.node_features_path, 'rb') as f:
+            node_features_data = pickle.load(f)
 
     skip_smiles = set()
 
@@ -145,6 +149,7 @@ def get_data(path: str,
                 line=line,
                 args=args,
                 features=features_data[i] if features_data is not None else None,
+                node_features=node_features_data[i] if node_features_data is not None else None,
                 use_compound_names=use_compound_names,
                 siamese=siamese
             ) for i, line in tqdm(enumerate(lines), total=len(lines))

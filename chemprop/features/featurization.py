@@ -3,6 +3,7 @@ from typing import List, Tuple, Union
 
 from rdkit import Chem
 import torch
+import numpy as np
 
 # Atom feature sizes
 MAX_ATOMIC_NUM = 100
@@ -47,7 +48,7 @@ def get_atom_fdim(args: Namespace) -> int:
 
     :param: Arguments.
     """
-    return ATOM_FDIM
+    return ATOM_FDIM + (args.node_features_size if (hasattr(args, 'node_features_size') and args.node_features_size is not None) else 0)
 
 
 def get_bond_fdim(args: Namespace) -> int:
@@ -135,12 +136,13 @@ class MolGraph:
     - b2revb: A mapping from a bond index to the index of the reverse bond.
     """
 
-    def __init__(self, smiles: str, args: Namespace):
+    def __init__(self, smiles: str, args: Namespace, node_features: np.ndarray=None):
         """
         Computes the graph structure and featurization of a molecule.
 
         :param smiles: A smiles string.
         :param args: Arguments.
+        :param node_features: np.ndarray of features for each atom, optional.
         """
         self.smiles = smiles
         self.n_atoms = 0  # number of atoms
@@ -161,6 +163,9 @@ class MolGraph:
         for i, atom in enumerate(mol.GetAtoms()):
             self.f_atoms.append(atom_features(atom))
         self.f_atoms = [self.f_atoms[i] for i in range(self.n_atoms)]
+        if node_features is not None:
+            assert len(node_features) == len(self.f_atoms)
+            self.f_atoms = [self.f_atoms[i] + list(node_features[i]) for i in range(self.n_atoms)]
 
         for _ in range(self.n_atoms):
             self.a2b.append([])
@@ -336,20 +341,22 @@ class BatchMolGraph:
 
 
 def mol2graph(smiles_batch: List[str],
-              args: Namespace) -> BatchMolGraph:
+              args: Namespace,
+              node_features_batch: List[np.ndarray] = None) -> BatchMolGraph:
     """
     Converts a list of SMILES strings to a BatchMolGraph containing the batch of molecular graphs.
 
     :param smiles_batch: A list of SMILES strings.
     :param args: Arguments.
+    :param node_features_batch: A list of ndarrays containing additional node-level features.
     :return: A BatchMolGraph containing the combined molecular graph for the molecules
     """
     mol_graphs = []
-    for smiles in smiles_batch:
+    for i, smiles in enumerate(smiles_batch):
         if smiles in SMILES_TO_GRAPH:
             mol_graph = SMILES_TO_GRAPH[smiles]
         else:
-            mol_graph = MolGraph(smiles, args)
+            mol_graph = MolGraph(smiles, args, node_features=node_features_batch[i] if node_features_batch is not None else None)
             if not args.no_cache:
                 SMILES_TO_GRAPH[smiles] = mol_graph
         mol_graphs.append(mol_graph)

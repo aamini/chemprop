@@ -49,6 +49,7 @@ def run_training(args: Namespace, logger: Logger = None) -> List[float]:
     data = get_data(path=args.data_path, args=args, logger=logger)
     args.num_tasks = data.num_tasks()
     args.features_size = data.features_size()
+    args.node_features_size = data.node_features_size()
     debug(f'Number of tasks = {args.num_tasks}')
 
     # Split data
@@ -105,6 +106,7 @@ def run_training(args: Namespace, logger: Logger = None) -> List[float]:
             all_split_indices.append(split_indices)
         with open(os.path.join(args.save_dir, 'split_indices.pckl'), 'wb') as f:
             pickle.dump(all_split_indices, f)
+        return [-1 for _ in range(args.num_tasks)]
 
     if args.features_scaling:
         features_scaler = train_data.normalize_features(replace_nan_token=0)

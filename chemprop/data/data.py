@@ -17,6 +17,7 @@ class MoleculeDatapoint:
                  line: List[str],
                  args: Namespace = None,
                  features: np.ndarray = None,
+                 node_features: np.ndarray = None,
                  use_compound_names: bool = False,
                  siamese: bool = False):
         """
@@ -38,6 +39,7 @@ class MoleculeDatapoint:
             raise ValueError('Currently cannot provide both loaded features and a features generator.')
 
         self.features = features
+        self.node_features = node_features
 
         if use_compound_names:
             self.compound_name = line[0]  # str
@@ -159,6 +161,17 @@ class MoleculeDataset(Dataset):
             return None
 
         return [d.features for d in self.data]
+    
+    def node_features(self) -> List[np.ndarray]:
+        """
+        Returns the node_features associated with each molecule (if they exist).
+
+        :return: A list of 2D numpy arrays containing the node features for each molecule or None if there are no features.
+        """
+        if len(self.data) == 0 or self.data[0].node_features is None:
+            return None
+
+        return [d.node_features for d in self.data]
 
     def targets(self) -> List[List[float]]:
         """
@@ -183,6 +196,14 @@ class MoleculeDataset(Dataset):
         :return: The size of the features.
         """
         return len(self.data[0].features) if len(self.data) > 0 and self.data[0].features is not None else None
+    
+    def node_features_size(self) -> int:
+        """
+        Returns the size of the node features array associated with each atom.
+
+        :return: The size of the features.
+        """
+        return len(self.data[0].node_features[0]) if len(self.data) > 0 and self.data[0].node_features is not None else None
 
     def shuffle(self, seed: int = None):
         """

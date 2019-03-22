@@ -76,6 +76,8 @@ def add_train_args(parser: ArgumentParser):
                              '(walks directory and ensembles all models that are found)')
     parser.add_argument('--checkpoint_path', type=str, default=None,
                         help='Path to model checkpoint (.pt file)')
+    parser.add_argument('--node_features_path', type=str, default=None,
+                        help='Path to saved node features to concatenate to atom features')
     parser.add_argument('--dataset_type', type=str,
                         choices=['classification', 'regression'],
                         help='Type of dataset, e.g. classification or regression.'

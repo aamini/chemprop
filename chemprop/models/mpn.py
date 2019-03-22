@@ -28,11 +28,12 @@ class MPNEncoder(nn.Module):
         self.dropout = args.dropout
         self.layers_per_message = 1
         self.undirected = args.undirected
-        self.gated = args.gated
+        self.gated = args.gated if hasattr(args, 'gated') else False
         self.atom_messages = args.atom_messages
         self.use_input_features = args.use_input_features
+        self.use_node_features = args.node_features_path is not None if hasattr(args, 'node_features_path') else False
         self.args = args
-        self.stereo_aware = args.stereo_aware
+        self.stereo_aware = args.stereo_aware if hasattr(args, 'stereo_aware') else False
 
         # Dropout
         self.dropout_layer = nn.Dropout(p=self.dropout)
@@ -66,12 +67,14 @@ class MPNEncoder(nn.Module):
 
     def forward(self,
                 mol_graph: BatchMolGraph,
-                features_batch: List[np.ndarray] = None) -> Union[torch.FloatTensor, Dict[str, torch.FloatTensor]]:
+                features_batch: List[np.ndarray] = None,
+                return_node_representations: bool=False) -> Union[torch.FloatTensor, Dict[str, torch.FloatTensor]]:
         """
         Encodes a batch of molecular graphs.
 
         :param mol_graph: A BatchMolGraph representing a batch of molecular graphs.
         :param features_batch: A list of ndarrays containing additional features.
+        :param return_node_representations: Whether to return the result before summing at the end, for getting intermediate representations.
         :return: A PyTorch tensor of shape (num_molecules, hidden_size) containing the encoding of each molecule.
         """
         if self.use_input_features:
@@ -81,6 +84,9 @@ class MPNEncoder(nn.Module):
                 features_batch = features_batch.cuda()
 
         f_atoms, f_bonds, a2b, b2a, b2revb, a_scope, b_scope = mol_graph.get_components()
+        # if self.use_node_features:
+        #     node_features_batch = np.concatenate(node_features_batch, axis=0)
+        #     f_atoms = torch.cat([f_atoms, torch.from_numpy(node_features_batch).float()])
 
         if self.atom_messages:
             a2a = mol_graph.get_a2a()
@@ -151,6 +157,9 @@ class MPNEncoder(nn.Module):
         atom_hiddens = self.act_func(self.W_o(a_input))  # num_atoms x hidden
         atom_hiddens = self.dropout_layer(atom_hiddens)  # num_atoms x hidden
 
+        if return_node_representations:
+            return atom_hiddens, a_scope
+
         # Readout
         mol_vecs = []
         for i, (a_start, a_size) in enumerate(a_scope):
@@ -199,17 +208,21 @@ class MPN(nn.Module):
 
     def forward(self,
                 batch: Union[List[str], BatchMolGraph],
-                features_batch: List[np.ndarray] = None) -> torch.Tensor:
+                features_batch: List[np.ndarray] = None,
+                node_features_batch: List[np.ndarray] = None,
+                return_node_representations: bool=False) -> torch.Tensor:
         """
         Encodes a batch of molecular SMILES strings.
 
         :param batch: A list of SMILES strings or a BatchMolGraph (if self.graph_input is True).
         :param features_batch: A list of ndarrays containing additional features.
+        :param node_features_batch: A list of ndarrays containing additional node-level features.
+        :param return_node_representations: Whether to return the result before summing at the end, for getting intermediate representations.
         :return: A PyTorch tensor of shape (num_molecules, hidden_size) containing the encoding of each molecule.
         """
         if not self.graph_input:  # if features only, batch won't even be used
-            batch = mol2graph(batch, self.args)
+            batch = mol2graph(batch, self.args, node_features_batch)
 
-        output = self.encoder.forward(batch, features_batch)
+        output = self.encoder.forward(batch, features_batch, return_node_representations)
 
         return output
