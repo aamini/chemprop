@@ -124,6 +124,8 @@ def get_data(path: str,
     if args.node_features_path is not None:
         with open(args.node_features_path, 'rb') as f:
             node_features_data = pickle.load(f)
+    else:
+        node_features_data = None
 
     skip_smiles = set()
 
