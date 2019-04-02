@@ -22,6 +22,7 @@ def evaluate_predictions(preds: List[List[float]],
     :param num_tasks: Number of tasks.
     :param metric_func: Metric function which takes in a list of targets and a list of predictions.
     :param dataset_type: Dataset type.
+    :param split_type: Split type.
     :param logger: Logger.
     :return: A list with the score for each task based on `metric_func`.
     """
@@ -88,6 +89,7 @@ def evaluate(model: nn.Module,
     :param metric_func: Metric function which takes in a list of targets and a list of predictions.
     :param batch_size: Batch size.
     :param dataset_type: Dataset type.
+    :param split_type: Split type.
     :param scaler: A StandardScaler object fit on the training targets.
     :param logger: Logger.
     :return: A list with the score for each task based on `metric_func`.
