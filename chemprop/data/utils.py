@@ -1,4 +1,5 @@
 from argparse import Namespace
+from copy import deepcopy
 import csv
 from logging import Logger
 import pickle
@@ -266,6 +267,33 @@ def split_data(data: MoleculeDataset,
         test = data[train_val_size:]
 
         return MoleculeDataset(train), MoleculeDataset(val), MoleculeDataset(test)
+
+    elif split_type == 'factor':
+        targets = data.targets()
+        known_pairs = [(mol_index, task_index) for mol_index in range(len(data)) for task_index in range(data.num_tasks()) if targets[mol_index][task_index] is not None]
+
+        random.seed(seed)
+        random.shuffle(known_pairs)
+
+        train_size = int(sizes[0] * len(known_pairs))
+        train_val_size = int((sizes[0] + sizes[1]) * len(known_pairs))
+
+        train_pairs = known_pairs[:train_size]
+        val_pairs = known_pairs[train_size:train_val_size]
+        test_pairs = known_pairs[train_val_size:]
+
+        train, val, test = deepcopy(data), deepcopy(data), deepcopy(data)
+
+        for mol_index, task_index in train_pairs:
+            val[mol_index].targets[task_index] = test[mol_index].targets[task_index] = None
+
+        for mol_index, task_index in val_pairs:
+            train[mol_index].targets[task_index] = test[mol_index].targets[task_index] = None
+
+        for mol_index, task_index in test_pairs:
+            train[mol_index].targets[task_index] = val[mol_index].targets[task_index] = None
+
+        return train, val, test
 
     else:
         raise ValueError(f'split_type "{split_type}" not supported.')
