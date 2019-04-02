@@ -12,6 +12,7 @@ def evaluate_predictions(preds: List[List[float]],
                          num_tasks: int,
                          metric_func: Callable,
                          dataset_type: str,
+                         split_type: str,
                          logger: logging.Logger = None) -> List[float]:
     """
     Evaluates predictions using a metric function and filtering out invalid targets.
@@ -38,6 +39,11 @@ def evaluate_predictions(preds: List[List[float]],
             if targets[j][i] is not None:  # Skip those without targets
                 valid_preds[i].append(preds[j][i])
                 valid_targets[i].append(targets[j][i])
+
+    if split_type == 'factor':
+        valid_preds = [[pred for preds in valid_preds for pred in preds]]
+        valid_targets = [[target for targets in valid_targets for target in targets]]
+        num_tasks = 1
 
     # Compute metric
     results = []
@@ -70,6 +76,7 @@ def evaluate(model: nn.Module,
              metric_func: Callable,
              batch_size: int,
              dataset_type: str,
+             split_type: str,
              scaler: StandardScaler = None,
              logger: logging.Logger = None) -> List[float]:
     """
@@ -100,6 +107,7 @@ def evaluate(model: nn.Module,
         num_tasks=num_tasks,
         metric_func=metric_func,
         dataset_type=dataset_type,
+        split_type=split_type,
         logger=logger
     )
 
