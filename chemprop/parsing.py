@@ -165,12 +165,16 @@ def add_train_args(parser: ArgumentParser):
                         help='Use a gaussian process instead of the models last layer to predict.')
     parser.add_argument('--last_hidden_size', type=int, default=30,
                         help='Size of last hidden layer.')
-    parser.add_argument('--bootstrap', type=int, nargs=3, default=[400, 200, 500],
+    parser.add_argument('--g_bootstrap', action='store_true', default=False,
+                        help='Display a chart representing bootstrapping with 95% confidence.')
+    parser.add_argument('--g_bootstrap_size', type=int, nargs=3, default=[400, 200, 500],
                         help='Bootstrap sample sizes for confidence estimation.')
-    parser.add_argument('--confidence', action='store_true', default=False,
+    parser.add_argument('--g_histogram', action='store_true', default=False,
                         help='Display a chart showing confidence intervals from Gaussian process.')
-    parser.add_argument('--joined_confidence', action='store_true', default=False,
-                        help='Display a joined chart showing confidence intervals from Gaussian process.')
+    parser.add_argument('--g_joined_histogram', action='store_true', default=False,
+                        help='Display a joined chart showing histograms from Gaussian process.')
+    parser.add_argument('--g_joined_boxplot', action='store_true', default=False,
+                        help='Display a joined chart showing boxplots from Gaussian process.')
 
 def update_checkpoint_args(args: Namespace):
     """

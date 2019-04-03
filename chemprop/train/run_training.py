@@ -318,7 +318,7 @@ def run_training(args: Namespace, logger: Logger = None) -> List[float]:
 
         sorted_pairs = sorted(list(zip(x, y)), key=lambda pair: pair[0])
 
-        if args.confidence:
+        if args.g_bootstrap:
             # Perform Bootstrapping at 95% confidence.
             sum_subset = sum([val[0] for val in sorted_pairs[:args.bootstrap[0]]])
 
@@ -341,7 +341,7 @@ def run_training(args: Namespace, logger: Logger = None) -> List[float]:
 
         plt.show()
 
-        if args.confidence:
+        if args.g_histogram:
             scale = np.average(y) * 5
 
             for i in range(5):
@@ -353,7 +353,7 @@ def run_training(args: Namespace, logger: Logger = None) -> List[float]:
                 plt.hist(errors, bins=10, range=(0, scale))
                 plt.show()
 
-        if args.joined_confidence:
+        if args.g_joined_histogram:
             bins = 8
             scale = np.average(y) * bins / 2
 
@@ -391,6 +391,24 @@ def run_training(args: Namespace, logger: Logger = None) -> List[float]:
 
             plt.show()
 
+        if args.g_joined_boxplot:
+            errors_by_confidence = [[] for _ in range(10)]
+            for pair in sorted_pairs:
+                if pair[0] == 10:
+                    continue
+
+                errors_by_confidence[int(pair[0])].append(pair[1])
+
+            fig, ax = plt.subplots()
+            ax.set_title('Joined Boxplot')
+            ax.boxplot(errors_by_confidence)
+
+            names = (f'{i} to {i+1} \n {len(errors_by_confidence[i])} points' for i in range(10))
+            plt.xticks(list(range(1, 11)), names)
+            plt.xlabel("Confidence")
+            plt.ylabel("Absolute Value of Error")
+            plt.legend()
+            plt.show()
 
         # Plot line of best fit.
         # terms = np.polyfit(x, y, 1)
