@@ -12,7 +12,6 @@ def evaluate_predictions(preds: List[List[float]],
                          num_tasks: int,
                          metric_func: Callable,
                          dataset_type: str,
-                         split_type: str,
                          logger: logging.Logger = None) -> List[float]:
     """
     Evaluates predictions using a metric function and filtering out invalid targets.
@@ -22,7 +21,6 @@ def evaluate_predictions(preds: List[List[float]],
     :param num_tasks: Number of tasks.
     :param metric_func: Metric function which takes in a list of targets and a list of predictions.
     :param dataset_type: Dataset type.
-    :param split_type: Split type.
     :param logger: Logger.
     :return: A list with the score for each task based on `metric_func`.
     """
@@ -72,7 +70,6 @@ def evaluate(model: nn.Module,
              metric_func: Callable,
              batch_size: int,
              dataset_type: str,
-             split_type: str,
              scaler: StandardScaler = None,
              logger: logging.Logger = None) -> List[float]:
     """
@@ -84,7 +81,6 @@ def evaluate(model: nn.Module,
     :param metric_func: Metric function which takes in a list of targets and a list of predictions.
     :param batch_size: Batch size.
     :param dataset_type: Dataset type.
-    :param split_type: Split type.
     :param scaler: A StandardScaler object fit on the training targets.
     :param logger: Logger.
     :return: A list with the score for each task based on `metric_func`.
@@ -104,7 +100,6 @@ def evaluate(model: nn.Module,
         num_tasks=num_tasks,
         metric_func=metric_func,
         dataset_type=dataset_type,
-        split_type=split_type,
         logger=logger
     )
 
