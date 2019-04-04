@@ -41,11 +41,6 @@ def evaluate_predictions(preds: List[List[float]],
                 valid_preds[i].append(preds[j][i])
                 valid_targets[i].append(targets[j][i])
 
-    if split_type == 'factor':
-        valid_preds = [[pred for preds in valid_preds for pred in preds]]
-        valid_targets = [[target for targets in valid_targets for target in targets]]
-        num_tasks = 1
-
     # Compute metric
     results = []
     for i in range(num_tasks):
