@@ -175,6 +175,10 @@ def add_train_args(parser: ArgumentParser):
                         help='Display a joined chart showing histograms from Gaussian process.')
     parser.add_argument('--g_joined_boxplot', action='store_true', default=False,
                         help='Display a joined chart showing boxplots from Gaussian process.')
+    parser.add_argument('--g_cutoff', action='store_true', default=False,
+                        help='Display a joined chart showing accuracy for differ cutoffs.')
+    parser.add_argument('--g_cutoff_discrete', action='store_true', default=False,
+                        help='Display discrete cutoffs and associate rmse.')
 
 def update_checkpoint_args(args: Namespace):
     """

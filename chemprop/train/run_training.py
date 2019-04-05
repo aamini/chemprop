@@ -312,7 +312,7 @@ def run_training(args: Namespace, logger: Logger = None) -> List[float]:
 
         x = np.array([i[0] for i in avg_test_var])
         y = np.array([i[0] for i in avg_test_preds]) - np.array([i[0] for i in transformed_targets[:]])
-        y = np.abs(y)
+        y = np.abs(y)   
 
         plt.plot(x, y, 'ro')
 
@@ -339,7 +339,37 @@ def run_training(args: Namespace, logger: Logger = None) -> List[float]:
 
             plt.plot(x_confidence, y_confidence)
 
+        if args.g_cutoff:
+            cutoff = []
+            rmse = []
+            square_error = [pair[1]*pair[1] for pair in sorted_pairs]
+            for i in range(len(sorted_pairs)):
+                cutoff.append(sorted_pairs[i][0])
+                rmse.append(np.sqrt(np.mean(square_error[i:])))
+
+            print(cutoff, rmse)
+            plt.plot(cutoff, rmse)
+
+        if args.g_cutoff_discrete:
+            cutoffs = list(np.arange(2, 8, 0.25))
+            cutoffs.insert(0, 0)
+
+            for c in cutoffs:
+                for i in range(len(sorted_pairs)):
+                    if sorted_pairs[i][0] > c:
+                        kept = (len(sorted_pairs) - i) / len(sorted_pairs)
+                        if kept > 0.1:
+                            print(f'Cutoff: {c}',
+                                  f'RMSE: {np.sqrt(np.mean([pair[1]*pair[1] for pair in sorted_pairs[i:]]))}',
+                                  f'% Results Kept: {(len(sorted_pairs) - i) / len(sorted_pairs)}')
+                        break
+
+
+
+
+
         plt.show()
+
 
         if args.g_histogram:
             scale = np.average(y) * 5
@@ -434,6 +464,35 @@ def run_training(args: Namespace, logger: Logger = None) -> List[float]:
         avg_ensemble_test_score = np.nanmean(ensemble_scores)
         info(f'Ensemble test {args.metric} = {avg_ensemble_test_score:.6f}')
         writer.add_scalar(f'ensemble_test_{args.metric}', avg_ensemble_test_score, 0)
+
+    if args.gaussian and args.dataset_type == 'classification':
+        kernel = GPy.kern.Linear(input_dim=args.last_hidden_size)
+
+        avg_last_hidden = sum_last_hidden / args.ensemble_size
+        avg_last_hidden_test = sum_last_hidden_test / args.ensemble_size
+
+        gaussian = GPy.models.GPRegression(avg_last_hidden, np.array(val_data.targets()), kernel)
+        gaussian.optimize()
+
+        avg_test_preds, avg_test_var = gaussian.predict(avg_last_hidden_test[:])
+
+        y = np.array([i[0] for i in avg_test_preds]) - np.array([i[0] for i in test_targets[:]])
+        y = np.abs(y)
+
+        plt.plot(avg_test_var, y, 'ro')
+        plt.show()
+
+
+        # Scale Data
+        domain = np.max(avg_test_var) - np.min(avg_test_var)
+        avg_test_var = avg_test_var - np.min(avg_test_var)                  # Shift.
+        avg_test_var = avg_test_var / domain                                # Scale domain to 1.
+        avg_test_var = np.maximum(0, -np.log(avg_test_var + np.exp(-10)))   # Apply log scale and flip.
+
+        x = np.array([i[0] for i in avg_test_var])
+
+        plt.plot(x, y, 'ro')
+        plt.show()
 
     # Individual ensemble scores
     if args.show_individual_scores:
