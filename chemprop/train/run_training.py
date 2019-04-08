@@ -7,6 +7,8 @@ from typing import List
 
 import matplotlib.pyplot as plt
 import numpy as np
+from rdkit import Chem, DataStructs
+from rdkit.Chem import AllChem
 from tensorboardX import SummaryWriter
 import torch
 from tqdm import trange
@@ -24,6 +26,28 @@ from chemprop.nn_utils import param_count
 from chemprop.utils import build_optimizer, build_lr_scheduler, get_loss_func, get_metric_func, load_checkpoint,\
     makedirs, save_checkpoint
 
+def morgan_fingerprint(smiles: str, radius: int = 3, num_bits: int = 2048, use_counts: bool = False) -> np.ndarray:
+    """
+    Generates a morgan fingerprint for a smiles string.
+
+    :param smiles: A smiles string for a molecule.
+    :param radius: The radius of the fingerprint.
+    :param num_bits: The number of bits to use in the fingerprint.
+    :param use_counts: Whether to use counts or just a bit vector for the fingerprint
+    :return: A 1-D numpy array containing the morgan fingerprint.
+    """
+    if type(smiles) == str:
+        mol = Chem.MolFromSmiles(smiles)
+    else:
+        mol = smiles
+    if use_counts:
+        fp_vect = AllChem.GetHashedMorganFingerprint(mol, radius, nBits=num_bits)
+    else:
+        fp_vect = AllChem.GetMorganFingerprintAsBitVect(mol, radius, nBits=num_bits)
+    fp = np.zeros((1,))
+    DataStructs.ConvertToNumpyArray(fp_vect, fp)
+
+    return fp
 
 def run_training(args: Namespace, logger: Logger = None) -> List[float]:
     """
@@ -292,27 +316,42 @@ def run_training(args: Namespace, logger: Logger = None) -> List[float]:
     writer.add_scalar(f'ensemble_test_{args.metric}', avg_ensemble_test_score, 0)
 
     if args.gaussian and args.dataset_type == 'regression':
-        kernel = GPy.kern.Linear(input_dim=args.last_hidden_size)
+        # kernel = GPy.kern.Linear(input_dim=args.last_hidden_size)
+        #
+        # avg_last_hidden = sum_last_hidden / args.ensemble_size
+        # avg_last_hidden_test = sum_last_hidden_test / args.ensemble_size
+        #
+        # transformed_val = scaler.transform(np.array(val_data.targets()))
+        # gaussian = GPy.models.GPRegression(avg_last_hidden, transformed_val, kernel)
+        # gaussian.optimize()
+        #
+        # avg_test_preds, avg_test_var = gaussian.predict(avg_last_hidden_test[:])
+        #
+        # # Scale Data
+        # domain = np.max(avg_test_var) - np.min(avg_test_var)
+        # avg_test_var = avg_test_var - np.min(avg_test_var)                  # Shift.
+        # avg_test_var = avg_test_var / domain                                # Scale domain to 1.
+        # avg_test_var = np.maximum(0, -np.log(avg_test_var + np.exp(-10)))   # Apply log scale and flip.
+        #
+        # x = np.array([i[0] for i in avg_test_var])
+        # y = np.abs(np.array([scaler.inverse_transform(i[0]) for i in avg_test_preds]) - np.array(test_targets))
+        x = []
+        y = []
 
-        avg_last_hidden = sum_last_hidden / args.ensemble_size
-        avg_last_hidden_test = sum_last_hidden_test / args.ensemble_size
-        transformed_targets = scaler.transform(test_targets)
+        train_smiles_sfp = [morgan_fingerprint(s) for s in train_smiles]
+        for i in range(len(test_smiles)):
+            smiles = Chem.MolToSmiles(Chem.MolFromSmiles(test_smiles[i]))
+            fp = morgan_fingerprint(smiles)
+            morgan_sim = []
+            for sfp in train_smiles_sfp:
+                tsim = np.dot(fp, sfp) / (fp.sum() + sfp.sum() - np.dot(fp, sfp))
+                morgan_sim.append((tsim, np.abs(avg_test_preds[i] - test_targets[i][0])))
+            morgan_sim, error = max(morgan_sim, key=lambda x: x[0])
+            x.append(morgan_sim)
+            y.append(error)
 
-        transformed_val = scaler.transform(np.array(val_data.targets()))
-        gaussian = GPy.models.GPRegression(avg_last_hidden, transformed_val, kernel)
-        gaussian.optimize()
-
-        avg_test_preds, avg_test_var = gaussian.predict(avg_last_hidden_test[:])
-
-        # Scale Data
-        domain = np.max(avg_test_var) - np.min(avg_test_var)
-        avg_test_var = avg_test_var - np.min(avg_test_var)                  # Shift.
-        avg_test_var = avg_test_var / domain                                # Scale domain to 1.
-        avg_test_var = np.maximum(0, -np.log(avg_test_var + np.exp(-10)))   # Apply log scale and flip.
-
-        x = np.array([i[0] for i in avg_test_var])
-        y = np.array([i[0] for i in avg_test_preds]) - np.array([i[0] for i in transformed_targets[:]])
-        y = np.abs(y)   
+        x = np.array(x) * 10
+        y = np.array(y)
 
         plt.plot(x, y, 'ro')
 
@@ -351,7 +390,7 @@ def run_training(args: Namespace, logger: Logger = None) -> List[float]:
             plt.plot(cutoff, rmse)
 
         if args.g_cutoff_discrete:
-            cutoffs = list(np.arange(2, 8, 0.25))
+            cutoffs = list(np.arange(0, 10, 0.5))
             cutoffs.insert(0, 0)
 
             for c in cutoffs:
@@ -363,13 +402,7 @@ def run_training(args: Namespace, logger: Logger = None) -> List[float]:
                                   f'RMSE: {np.sqrt(np.mean([pair[1]*pair[1] for pair in sorted_pairs[i:]]))}',
                                   f'% Results Kept: {(len(sorted_pairs) - i) / len(sorted_pairs)}')
                         break
-
-
-
-
-
         plt.show()
-
 
         if args.g_histogram:
             scale = np.average(y) * 5
@@ -440,18 +473,8 @@ def run_training(args: Namespace, logger: Logger = None) -> List[float]:
             plt.legend()
             plt.show()
 
-        # Plot line of best fit.
-        # terms = np.polyfit(x, y, 1)
-        #
-        # pprint(terms)
-        # s = np.sort(x)
-        # plt.plot(s, terms[0] * s + terms[1])
-
-
-        avg_test_preds = scaler.inverse_transform(avg_test_preds)
-
         ensemble_scores = evaluate_predictions(
-            preds=avg_test_preds.tolist(),
+            preds=scaler.inverse_transform(avg_test_preds).tolist(),
             targets=test_targets,
             num_tasks=args.num_tasks,
             metric_func=metric_func,
