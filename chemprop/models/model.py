@@ -7,7 +7,6 @@ from .mpn import MPN
 from chemprop.nn_utils import get_activation_function, initialize_weights
 
 
-
 class MoleculeModel(nn.Module):
     """A MoleculeModel is a model which contains a message passing network following by feed-forward layers."""
 
@@ -20,12 +19,6 @@ class MoleculeModel(nn.Module):
         super(MoleculeModel, self).__init__()
 
         self.classification = classification
-
-        if gaussian:
-            if self.classification:
-                self.gaussian = GaussianProcessClassifier()
-            else:
-                self.gaussian = GaussianProcessRegressor()
 
         if self.classification:
             self.sigmoid = nn.Sigmoid()
@@ -93,7 +86,8 @@ class MoleculeModel(nn.Module):
         :param input: Input.
         :return: The output of the MoleculeModel.
         """
-        ffn = self.ffn if self.use_last_hidden else nn.Sequential(*list(self.ffn.children())[:-1])
+        ffn = self.ffn if self.use_last_hidden else nn.Sequential(
+            *list(self.ffn.children())[:-1])
         output = ffn(self.encoder(*input))
 
         # Don't apply sigmoid during training b/c using BCEWithLogitsLoss
