@@ -387,6 +387,9 @@ def run_training(args: Namespace, logger: Logger = None) -> List[float]:
             x = np.array(x) * 10
             y = np.array(y)
 
+        elif args.confidence == 'ensemble':
+            x, y = np.var(all_test_preds, axis=2) * -1, np.abs(avg_test_preds - test_targets)
+
         confidence_visualizations(args, x=x, y=y)
 
     if args.confidence and args.dataset_type == 'classification':
@@ -433,31 +436,34 @@ def run_training(args: Namespace, logger: Logger = None) -> List[float]:
 
 
 def confidence_visualizations(args: Namespace, x: List[Union[float, int]] = [], y: List[Union[float, int]] = []):
-    sorted_pairs = sorted(list(zip(x, y)), key=lambda pair: pair[0])
+    pairs_by_confidence = sorted(list(zip(x, y)), key=lambda pair: pair[0])
+    pairs_by_error = sorted(list(zip(x, y)), key=lambda pair: pair[1])
+
     metric_func = get_metric_func(metric=args.metric)
 
     if args.g_cutoff_discrete:
-        cutoffs = list(np.arange(0, 10, 0.5))
-        cutoffs.insert(0, 0)
+        for i in range(10):
+            c = int((i/10) * len(pairs_by_confidence))
+            kept = (len(pairs_by_confidence) - c) / len(pairs_by_confidence)
+            print(f'Cutoff: {pairs_by_confidence[c][0]}',
+                  f'{args.metric}: {metric_func([pair[0] for pair in pairs_by_confidence[c:]], [pair[1] for pair in pairs_by_confidence[c:]])}',
+                  f'% Results Kept: {int(kept*100)}%')
 
-        for c in cutoffs:
-            for i in range(len(sorted_pairs)):
-                if sorted_pairs[i][0] > c:
-                    kept = (len(sorted_pairs) - i) / len(sorted_pairs)
-                    if kept > 0.1:
-                        print(f'Cutoff: {c}',
-                              f'{args.metric}: {metric_func([pair[0] for pair in sorted_pairs[i:]], [pair[1] for pair in sorted_pairs[i:]])}',
-                              f'% Results Kept: {(len(sorted_pairs) - i) / len(sorted_pairs)}')
-                    break
+        # Calculate Ideal Cutoffs
+        for i in range(10):
+            c = int((1 - i/10) * len(pairs_by_error))
+            kept = c / len(pairs_by_error)
+            print(f'{args.metric}: {metric_func([pair[0] for pair in pairs_by_error[:c]], [pair[1] for pair in pairs_by_error[:c]])}',
+                  f'% Results Kept: {int(kept*100)}%')
 
     plt.plot(x, y, 'ro')
 
     if args.g_cutoff:
         cutoff = []
         rmse = []
-        square_error = [pair[1]*pair[1] for pair in sorted_pairs]
-        for i in range(len(sorted_pairs)):
-            cutoff.append(sorted_pairs[i][0])
+        square_error = [pair[1]*pair[1] for pair in pairs_by_confidence]
+        for i in range(len(pairs_by_confidence)):
+            cutoff.append(pairs_by_confidence[i][0])
             rmse.append(np.sqrt(np.mean(square_error[i:])))
 
         print(cutoff, rmse)
@@ -466,23 +472,23 @@ def confidence_visualizations(args: Namespace, x: List[Union[float, int]] = [], 
     if args.g_bootstrap:
         # Perform Bootstrapping at 95% confidence.
         sum_subset = sum([val[0]
-                          for val in sorted_pairs[:args.bootstrap[0]]])
+                          for val in pairs_by_confidence[:args.bootstrap[0]]])
 
         x_confidence = []
         y_confidence = []
 
-        for i in range(args.bootstrap[0], len(sorted_pairs)):
+        for i in range(args.bootstrap[0], len(pairs_by_confidence)):
             x_confidence.append(sum_subset/args.bootstrap[0])
 
-            ys = [val[1] for val in sorted_pairs[i-args.bootstrap[0]:i]]
+            ys = [val[1] for val in pairs_by_confidence[i-args.bootstrap[0]:i]]
             y_sum = 0
             for j in range(args.bootstrap[2]):
                 y_sum += sorted(np.random.choice(ys,
                                                  args.bootstrap[1]))[-int(args.bootstrap[1]/20)]
 
             y_confidence.append(y_sum / args.bootstrap[2])
-            sum_subset -= sorted_pairs[i-args.bootstrap[0]][0]
-            sum_subset += sorted_pairs[i][0]
+            sum_subset -= pairs_by_confidence[i-args.bootstrap[0]][0]
+            sum_subset += pairs_by_confidence[i][0]
 
         plt.plot(x_confidence, y_confidence)
 
@@ -493,7 +499,7 @@ def confidence_visualizations(args: Namespace, x: List[Union[float, int]] = [], 
 
         for i in range(5):
             errors = []
-            for pair in sorted_pairs:
+            for pair in pairs_by_confidence:
                 if pair[0] < 2 * i or pair[0] > 2 * (i + 1):
                     continue
                 errors.append(pair[1])
@@ -505,7 +511,7 @@ def confidence_visualizations(args: Namespace, x: List[Union[float, int]] = [], 
         scale = np.average(y) * bins / 2
 
         errors_by_confidence = [[] for _ in range(10)]
-        for pair in sorted_pairs:
+        for pair in pairs_by_confidence:
             if pair[0] == 10:
                 continue
 
@@ -546,7 +552,7 @@ def confidence_visualizations(args: Namespace, x: List[Union[float, int]] = [], 
 
     if args.g_joined_boxplot:
         errors_by_confidence = [[] for _ in range(10)]
-        for pair in sorted_pairs:
+        for pair in pairs_by_confidence:
             if pair[0] == 10:
                 continue
 
