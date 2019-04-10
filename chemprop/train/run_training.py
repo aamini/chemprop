@@ -5,10 +5,12 @@ import os
 from pprint import pformat
 from typing import List, Tuple, Union
 
+import forestci as fci
 import matplotlib.pyplot as plt
 import numpy as np
 from rdkit import Chem, DataStructs
 from rdkit.Chem import AllChem
+from sklearn.ensemble import RandomForestRegressor
 from tensorboardX import SummaryWriter
 import torch
 from tqdm import trange
@@ -173,7 +175,7 @@ def run_training(args: Namespace, logger: Logger = None) -> List[float]:
     all_test_preds = np.zeros(
         (len(test_smiles), args.num_tasks, args.ensemble_size))
 
-    if args.confidence == "gaussian":
+    if args.confidence == 'gaussian' or args.confidence == 'random_forest':
         sum_last_hidden = np.zeros(
             (len(val_data.smiles()), args.last_hidden_size))
         sum_last_hidden_test = np.zeros(
@@ -288,7 +290,7 @@ def run_training(args: Namespace, logger: Logger = None) -> List[float]:
             sum_test_preds += np.array(test_preds)
             all_test_preds[:, :, model_idx] = np.array(test_preds)
 
-        if args.confidence == "gaussian":
+        if args.confidence == 'gaussian' or args.confidence == 'random_forest':
             model.eval()
             model.use_last_hidden = False
             last_hidden = predict(
@@ -325,6 +327,12 @@ def run_training(args: Namespace, logger: Logger = None) -> List[float]:
     # Evaluate ensemble on test set
     avg_test_preds = (sum_test_preds / args.ensemble_size)
 
+    if args.confidence == 'gaussian' or args.confidence == 'random_forest':
+        avg_last_hidden = sum_last_hidden / args.ensemble_size
+        avg_last_hidden_test = sum_last_hidden_test / args.ensemble_size
+
+        transformed_val = scaler.transform(np.array(val_data.targets()))
+
     ensemble_scores = evaluate_predictions(
         preds=avg_test_preds.tolist(),
         targets=test_targets,
@@ -342,11 +350,6 @@ def run_training(args: Namespace, logger: Logger = None) -> List[float]:
     if args.confidence and args.dataset_type == 'regression':
         if args.confidence == 'gaussian':
             kernel = GPy.kern.Linear(input_dim=args.last_hidden_size)
-
-            avg_last_hidden = sum_last_hidden / args.ensemble_size
-            avg_last_hidden_test = sum_last_hidden_test / args.ensemble_size
-
-            transformed_val = scaler.transform(np.array(val_data.targets()))
             gaussian = GPy.models.GPRegression(
                 avg_last_hidden, transformed_val, kernel)
             gaussian.optimize()
@@ -363,12 +366,23 @@ def run_training(args: Namespace, logger: Logger = None) -> List[float]:
             # Apply log scale and flip.
             avg_test_var = np.maximum(0, -np.log(avg_test_var + np.exp(-10)))
 
-            x = np.array([i[0] for i in avg_test_var])
-            y = np.abs(np.array([scaler.inverse_transform(i[0])
-                                 for i in avg_test_preds]) - np.array(test_targets))
+            predictions = np.array(
+                [scaler.inverse_transform(i[0]) for i in avg_test_preds])
+            confidence = np.array([i[0] for i in avg_test_var])
+        elif args.confidence == 'random_forest':
+            n_trees = 2000
+            forest = RandomForestRegressor(n_estimators=n_trees)
+            forest.fit(avg_last_hidden, transformed_val)
+
+            avg_test_preds = forest.predict(avg_last_hidden_test[:])
+
+            predictions = np.array(
+                [scaler.inverse_transform(i) for i in avg_test_preds])
+            confidence = fci.random_forest_error(
+                forest, avg_last_hidden, avg_last_hidden_test[:]) * (-1)
         elif args.confidence == 'tanimoto':
-            x = []
-            y = []
+            predictions = avg_test_preds
+            confidence = []
 
             train_smiles_sfp = [morgan_fingerprint(s) for s in train_smiles]
             for i in range(len(test_smiles)):
@@ -381,50 +395,26 @@ def run_training(args: Namespace, logger: Logger = None) -> List[float]:
                     morgan_sim.append(
                         (tsim, np.abs(avg_test_preds[i] - test_targets[i][0])))
                 morgan_sim, error = max(morgan_sim, key=lambda x: x[0])
-                x.append(morgan_sim)
-                y.append(error)
+                confidence.append(morgan_sim)
 
-            x = np.array(x) * 10
-            y = np.array(y)
+            confidence = np.array(confidence) * 10
 
         elif args.confidence == 'ensemble':
-            x, y = np.var(all_test_preds, axis=2) * -1, np.abs(avg_test_preds - test_targets)
+            predictions = avg_test_preds
+            confidence = np.var(all_test_preds, axis=2) * -1
 
-        confidence_visualizations(args, x=x, y=y)
+        confidence_visualizations(args, predictions=predictions, targets=np.array(
+            test_targets), confidence=confidence)
 
     if args.confidence and args.dataset_type == 'classification':
-        kernel = GPy.kern.Linear(input_dim=args.last_hidden_size)
+        if args.confidence == 'probability':
+            predictions = avg_test_preds
+            print(avg_test_preds)
+            confidence = np.array([max(p[0], 1 - p[0])
+                                   for p in avg_test_preds])
 
-        avg_last_hidden = sum_last_hidden / args.ensemble_size
-        avg_last_hidden_test = sum_last_hidden_test / args.ensemble_size
-
-        gaussian = GPy.models.GPRegression(
-            avg_last_hidden, np.array(val_data.targets()), kernel)
-        gaussian.optimize()
-
-        avg_test_preds, avg_test_var = gaussian.predict(
-            avg_last_hidden_test[:])
-
-        y = np.array([i[0] for i in avg_test_preds]) - \
-            np.array([i[0] for i in test_targets[:]])
-        y = np.abs(y)
-
-        plt.plot(avg_test_var, y, 'ro')
-        plt.show()
-
-        # Scale Data
-        domain = np.max(avg_test_var) - np.min(avg_test_var)
-        # Shift.
-        avg_test_var = avg_test_var - np.min(avg_test_var)
-        # Scale domain to 1.
-        avg_test_var = avg_test_var / domain
-        # Apply log scale and flip.
-        avg_test_var = np.maximum(0, -np.log(avg_test_var + np.exp(-10)))
-
-        x = np.array([i[0] for i in avg_test_var])
-
-        plt.plot(x, y, 'ro')
-        plt.show()
+        confidence_visualizations(args, predictions=predictions, targets=np.array(
+            test_targets), confidence=confidence)
 
     # Individual ensemble scores
     if args.show_individual_scores:
@@ -435,35 +425,59 @@ def run_training(args: Namespace, logger: Logger = None) -> List[float]:
     return ensemble_scores
 
 
-def confidence_visualizations(args: Namespace, x: List[Union[float, int]] = [], y: List[Union[float, int]] = []):
-    pairs_by_confidence = sorted(list(zip(x, y)), key=lambda pair: pair[0])
-    pairs_by_error = sorted(list(zip(x, y)), key=lambda pair: pair[1])
+def confidence_visualizations(args: Namespace, predictions: List[Union[float, int]] = [], targets: List[Union[float, int]] = [], confidence: List[Union[float, int]] = []):
+    error = np.abs(predictions - targets)
+    sets_by_confidence = sorted(
+        list(zip(confidence, error, predictions, targets)), key=lambda pair: pair[0])
+    sets_by_error = sorted(list(zip(confidence, error, predictions, targets)),
+                           key=lambda pair: pair[1])
 
     metric_func = get_metric_func(metric=args.metric)
 
     if args.g_cutoff_discrete:
+        print(
+            f'----Cutoffs Generated Using {args.confidence} Estimation Process----')
         for i in range(10):
-            c = int((i/10) * len(pairs_by_confidence))
-            kept = (len(pairs_by_confidence) - c) / len(pairs_by_confidence)
-            print(f'Cutoff: {pairs_by_confidence[c][0]}',
-                  f'{args.metric}: {metric_func([pair[0] for pair in pairs_by_confidence[c:]], [pair[1] for pair in pairs_by_confidence[c:]])}',
+            c = int((i/10) * len(sets_by_confidence))
+            kept = (len(sets_by_confidence) - c) / len(sets_by_confidence)
+
+            accuracy = evaluate_predictions(
+                preds=[pair[2] for pair in sets_by_confidence[c:]],
+                targets=[pair[3] for pair in sets_by_confidence[c:]],
+                num_tasks=args.num_tasks,
+                metric_func=metric_func,
+                dataset_type=args.dataset_type
+            )
+
+            print(f'Cutoff: {sets_by_confidence[c][0]}',
+                  f'{args.metric}: {accuracy}',
                   f'% Results Kept: {int(kept*100)}%')
 
+        print(f'----Cutoffs Generated by Ideal Confidence Estimator----')
         # Calculate Ideal Cutoffs
         for i in range(10):
-            c = int((1 - i/10) * len(pairs_by_error))
-            kept = c / len(pairs_by_error)
-            print(f'{args.metric}: {metric_func([pair[0] for pair in pairs_by_error[:c]], [pair[1] for pair in pairs_by_error[:c]])}',
+            c = int((1 - i/10) * len(sets_by_error))
+            kept = c / len(sets_by_error)
+
+            accuracy = evaluate_predictions(
+                preds=[pair[2] for pair in sets_by_error[:c]],
+                targets=[pair[3] for pair in sets_by_error[:c]],
+                num_tasks=args.num_tasks,
+                metric_func=metric_func,
+                dataset_type=args.dataset_type
+            )
+
+            print(f'{args.metric}: {accuracy}',
                   f'% Results Kept: {int(kept*100)}%')
 
-    plt.plot(x, y, 'ro')
+    plt.plot(confidence, error, 'ro')
 
     if args.g_cutoff:
         cutoff = []
         rmse = []
-        square_error = [pair[1]*pair[1] for pair in pairs_by_confidence]
-        for i in range(len(pairs_by_confidence)):
-            cutoff.append(pairs_by_confidence[i][0])
+        square_error = [pair[1]*pair[1] for pair in sets_by_confidence]
+        for i in range(len(sets_by_confidence)):
+            cutoff.append(sets_by_confidence[i][0])
             rmse.append(np.sqrt(np.mean(square_error[i:])))
 
         print(cutoff, rmse)
@@ -472,34 +486,34 @@ def confidence_visualizations(args: Namespace, x: List[Union[float, int]] = [], 
     if args.g_bootstrap:
         # Perform Bootstrapping at 95% confidence.
         sum_subset = sum([val[0]
-                          for val in pairs_by_confidence[:args.bootstrap[0]]])
+                          for val in sets_by_confidence[:args.bootstrap[0]]])
 
         x_confidence = []
         y_confidence = []
 
-        for i in range(args.bootstrap[0], len(pairs_by_confidence)):
+        for i in range(args.bootstrap[0], len(sets_by_confidence)):
             x_confidence.append(sum_subset/args.bootstrap[0])
 
-            ys = [val[1] for val in pairs_by_confidence[i-args.bootstrap[0]:i]]
+            ys = [val[1] for val in sets_by_confidence[i-args.bootstrap[0]:i]]
             y_sum = 0
             for j in range(args.bootstrap[2]):
                 y_sum += sorted(np.random.choice(ys,
                                                  args.bootstrap[1]))[-int(args.bootstrap[1]/20)]
 
             y_confidence.append(y_sum / args.bootstrap[2])
-            sum_subset -= pairs_by_confidence[i-args.bootstrap[0]][0]
-            sum_subset += pairs_by_confidence[i][0]
+            sum_subset -= sets_by_confidence[i-args.bootstrap[0]][0]
+            sum_subset += sets_by_confidence[i][0]
 
         plt.plot(x_confidence, y_confidence)
 
     plt.show()
 
     if args.g_histogram:
-        scale = np.average(y) * 5
+        scale = np.average(error) * 5
 
         for i in range(5):
             errors = []
-            for pair in pairs_by_confidence:
+            for pair in sets_by_confidence:
                 if pair[0] < 2 * i or pair[0] > 2 * (i + 1):
                     continue
                 errors.append(pair[1])
@@ -508,10 +522,10 @@ def confidence_visualizations(args: Namespace, x: List[Union[float, int]] = [], 
 
     if args.g_joined_histogram:
         bins = 8
-        scale = np.average(y) * bins / 2
+        scale = np.average(error) * bins / 2
 
         errors_by_confidence = [[] for _ in range(10)]
-        for pair in pairs_by_confidence:
+        for pair in sets_by_confidence:
             if pair[0] == 10:
                 continue
 
@@ -552,7 +566,7 @@ def confidence_visualizations(args: Namespace, x: List[Union[float, int]] = [], 
 
     if args.g_joined_boxplot:
         errors_by_confidence = [[] for _ in range(10)]
-        for pair in pairs_by_confidence:
+        for pair in sets_by_confidence:
             if pair[0] == 10:
                 continue
 
