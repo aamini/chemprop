@@ -20,7 +20,7 @@ def add_predict_args(parser: ArgumentParser):
                         help='Which GPU to use')
     parser.add_argument('--test_path', type=str,
                         help='Path to CSV file containing testing data for which predictions will be made')
-    parser.add_argument('--compound_names', action='store_true', default=False,
+    parser.add_argument('--use_compound_names', action='store_true', default=False,
                         help='Use when test data file contains compound names in addition to SMILES strings')
     parser.add_argument('--preds_path', type=str,
                         help='Path to CSV file where predictions will be saved')
@@ -40,6 +40,8 @@ def add_predict_args(parser: ArgumentParser):
                         help='Path to features to use in FNN (instead of features_generator)')
     parser.add_argument('--no_features_scaling', action='store_true', default=False,
                         help='Turn off scaling of features')
+    parser.add_argument('--max_data_size', type=int,
+                        help='Maximum number of data points to load')
 
 
 def add_train_args(parser: ArgumentParser):
@@ -54,6 +56,10 @@ def add_train_args(parser: ArgumentParser):
                         help='Which GPU to use')
     parser.add_argument('--data_path', type=str,
                         help='Path to data CSV file')
+    parser.add_argument('--use_compound_names', action='store_true', default=False,
+                        help='Use when test data file contains compound names in addition to SMILES strings')
+    parser.add_argument('--max_data_size', type=int,
+                        help='Maximum number of data points to load')
     parser.add_argument('--test', action='store_true', default=False,
                         help='Whether to skip training and only test the model')
     parser.add_argument('--features_only', action='store_true', default=False,
@@ -169,6 +175,9 @@ def update_checkpoint_args(args: Namespace):
 
     :param args: Arguments.
     """
+    if hasattr(args, 'checkpoint_paths') and args.checkpoint_paths is not None:
+        return
+
     if args.checkpoint_dir is not None and args.checkpoint_path is not None:
         raise ValueError('Only one of checkpoint_dir and checkpoint_path can be specified.')
 
@@ -180,7 +189,7 @@ def update_checkpoint_args(args: Namespace):
 
     for root, _, files in os.walk(args.checkpoint_dir):
         for fname in files:
-            if fname == 'model.pt':
+            if fname.endswith('.pt'):
                 args.checkpoint_paths.append(os.path.join(root, fname))
 
     args.ensemble_size = len(args.checkpoint_paths)
@@ -197,7 +206,7 @@ def modify_predict_args(args: Namespace):
     """
     assert args.test_path
     assert args.preds_path
-    assert args.checkpoint_dir is not None or args.checkpoint_path is not None
+    assert args.checkpoint_dir is not None or args.checkpoint_path is not None or args.checkpoint_paths is not None
 
     update_checkpoint_args(args)
 

@@ -1,5 +1,6 @@
 DROP TABLE IF EXISTS user;
 DROP TABLE IF EXISTS ckpt;
+DROP TABLE IF EXISTS model;
 DROP TABLE IF EXISTS dataset;
 
 CREATE TABLE user (
@@ -16,9 +17,17 @@ CREATE TABLE ckpt (
   class TEXT NOT NULL,
   stats JSON,
   epochs INTEGER NOT NULL DEFAULT 30,
+  ensemble_size INTEGER NOT NULL,
+  training_size INTEGER NOT NULL,
   completed BOOLEAN NOT NULL DEFAULT 0,
   FOREIGN KEY (associated_user) REFERENCES user (id),
   CONSTRAINT uq_ckpt_names UNIQUE(ckpt_name, associated_user)
+);
+
+CREATE TABLE model (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  associated_ckpt INTEGER NOT NULL,
+  FOREIGN KEY (associated_ckpt) REFERENCES ckpt (id)
 );
 
 CREATE TABLE dataset (

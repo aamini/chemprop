@@ -2,6 +2,7 @@
 
 from argparse import ArgumentParser, Namespace
 from functools import wraps
+import io
 import os
 import sys
 import shutil
@@ -9,8 +10,9 @@ from tempfile import TemporaryDirectory, NamedTemporaryFile
 import time
 from typing import Callable, List, Tuple
 import multiprocessing as mp
+import zipfile
 
-from flask import json, jsonify, redirect, render_template, request, send_from_directory, url_for
+from flask import json, jsonify, redirect, render_template, request, send_file, send_from_directory, url_for
 import numpy as np
 from rdkit import Chem
 from werkzeug.utils import secure_filename
@@ -133,7 +135,6 @@ def format_float_list(array: List[float], precision: int = 4) -> List[str]:
     """
     return [format_float(f, precision) for f in array]
 
-
 @app.route('/receiver', methods=['POST'])
 @check_not_demo
 def receiver():
@@ -188,8 +189,9 @@ def train():
         return render_train()
 
     # Get arguments
-    data_name, epochs, checkpoint_name = \
-        request.form['dataName'], int(request.form['epochs']), request.form['checkpointName']
+    data_name, epochs, ensemble_size, checkpoint_name = \
+        request.form['dataName'], int(request.form['epochs']), \
+        int(request.form['ensembleSize']), request.form['checkpointName']
     gpu = request.form.get('gpu')
     data_path = os.path.join(app.config['DATA_FOLDER'], f'{data_name}.csv')
     dataset_type = request.form.get('datasetType', 'regression')
@@ -202,11 +204,12 @@ def train():
     args.data_path = data_path
     args.dataset_type = dataset_type
     args.epochs = epochs
+    args.ensemble_size = ensemble_size
 
     # Check if regression/classification selection matches data
     data = get_data(path=data_path)
     targets = data.targets()
-    unique_targets = set(np.unique(targets))
+    unique_targets = {target for row in targets for target in row if target is not None}
 
     if dataset_type == 'classification' and len(unique_targets - {0, 1}) > 0:
         errors.append('Selected classification dataset but not all labels are 0 or 1. Select regression instead.')
@@ -230,8 +233,12 @@ def train():
         # Use DEFAULT as current user if the client's cookie is not set.
         current_user = app.config['DEFAULT_USER_ID']
 
-
-    ckpt_id, ckpt_name = db.insert_ckpt(checkpoint_name, current_user, args.dataset_type, args.epochs)
+    ckpt_id, ckpt_name = db.insert_ckpt(checkpoint_name,
+                                        current_user,
+                                        args.dataset_type,
+                                        args.epochs,
+                                        args.ensemble_size,
+                                        len(targets))
 
     with TemporaryDirectory() as temp_dir:
         args.save_dir = temp_dir
@@ -251,13 +258,16 @@ def train():
         PROGRESS = mp.Value('d', 0.0)
 
         # Check if name overlap
-        original_save_path = os.path.join(app.config['CHECKPOINT_FOLDER'], f'{ckpt_id}.pt')
-        save_path = find_unused_path(original_save_path)
-        if save_path != original_save_path:
-            warnings.append(name_already_exists_message('Checkpoint', original_save_path, save_path))
+        if checkpoint_name != ckpt_name:
+            warnings.append(name_already_exists_message('Checkpoint', checkpoint_name, ckpt_name))
 
-        # Move checkpoint
-        shutil.move(os.path.join(args.save_dir, 'model_0', 'model.pt'), save_path)
+        # Move models
+        for root, _, files in os.walk(args.save_dir):
+            for fname in files:
+                if fname.endswith('.pt'):
+                    model_id = db.insert_model(ckpt_id)
+                    save_path = os.path.join(app.config['CHECKPOINT_FOLDER'], f'{model_id}.pt')
+                    shutil.move(os.path.join(args.save_dir, root, fname), save_path)
 
     return render_train(trained=True,
                         metric=args.metric,
@@ -292,7 +302,12 @@ def predict():
     # Get arguments
     ckpt_id = request.form['checkpointName']
 
-    if 'data' in request.files:
+    if request.form['textSmiles'] != '':
+        smiles = request.form['textSmiles'].split()
+    elif request.form['drawSmiles'] != '':
+        smiles = [request.form['drawSmiles']]
+    else:
+        print(" GOT HERE")
         # Upload data file with SMILES
         data = request.files['data']
         data_name = secure_filename(data.filename)
@@ -305,13 +320,11 @@ def predict():
 
         # Get remaining smiles
         smiles.extend(get_smiles(data_path))
-    elif request.form['textSmiles'] != '':
-        smiles = request.form['textSmiles'].split()
-    else:
-        smiles = [request.form['drawSmiles']]
 
-    checkpoint_path = os.path.join(app.config['CHECKPOINT_FOLDER'], f'{ckpt_id}.pt')
-    task_names = load_task_names(checkpoint_path)
+    models = db.get_models(ckpt_id)
+    model_paths = [os.path.join(app.config['CHECKPOINT_FOLDER'], f'{model["id"]}.pt') for model in models]
+
+    task_names = load_task_names(model_paths[0])
     num_tasks = len(task_names)
     gpu = request.form.get('gpu')
 
@@ -323,7 +336,7 @@ def predict():
     preds_path = os.path.join(app.config['TEMP_FOLDER'], app.config['PREDICTIONS_FILENAME'])
     args.test_path = 'None'  # TODO: Remove this hack to avoid assert crashing in modify_predict_args
     args.preds_path = preds_path
-    args.checkpoint_path = checkpoint_path
+    args.checkpoint_paths = model_paths
     if gpu is not None:
         if gpu == 'None':
             args.no_cuda = True
@@ -356,7 +369,7 @@ def predict():
 @app.route('/download_predictions')
 def download_predictions():
     """Downloads predictions as a .csv file."""
-    return send_from_directory(app.config['TEMP_FOLDER'], app.config['PREDICTIONS_FILENAME'], as_attachment=True)
+    return send_from_directory(app.config['TEMP_FOLDER'], app.config['PREDICTIONS_FILENAME'], as_attachment=True, cache_timeout=-1)
 
 
 @app.route('/data')
@@ -422,7 +435,7 @@ def download_data(dataset: int):
 
     :param dataset: The id of the dataset to download.
     """
-    return send_from_directory(app.config['DATA_FOLDER'], f'{dataset}.csv', as_attachment=True)
+    return send_from_directory(app.config['DATA_FOLDER'], f'{dataset}.csv', as_attachment=True, cache_timeout=-1)
 
 
 @app.route('/data/delete/<int:dataset>')
@@ -477,14 +490,21 @@ def upload_checkpoint(return_page: str):
 
         ckpt_args = load_args(temp_file)
 
-        ckpt_id, new_ckpt_name = db.insert_ckpt(ckpt_name, current_user, ckpt_args.dataset_type, ckpt_args.epochs)
+        ckpt_id, new_ckpt_name = db.insert_ckpt(ckpt_name,
+                                                current_user,
+                                                ckpt_args.dataset_type,
+                                                ckpt_args.epochs,
+                                                1,
+                                                ckpt_args.train_data_size)
 
-        ckpt_path = os.path.join(app.config['CHECKPOINT_FOLDER'], f'{ckpt_id}.pt')
+        model_id = db.insert_model(ckpt_id)
+
+        model_path = os.path.join(app.config['CHECKPOINT_FOLDER'], f'{model_id}.pt')
 
         if ckpt_name != new_ckpt_name:
             warnings.append(name_already_exists_message('Checkpoint', ckpt_name, new_ckpt_name))
 
-        shutil.copy(temp_file.name, ckpt_path)
+        shutil.copy(temp_file.name, model_path)
 
     warnings, errors = json.dumps(warnings), json.dumps(errors)
 
@@ -495,12 +515,29 @@ def upload_checkpoint(return_page: str):
 @check_not_demo
 def download_checkpoint(checkpoint: int):
     """
-    Downloads a checkpoint .pt file.
+    Downloads a zip of model .pt files.
 
-    :param checkpoint: The name of the checkpoint file to download.
+    :param checkpoint: The name of the checkpoint to download.
     """
-    return send_from_directory(app.config['CHECKPOINT_FOLDER'], f'{checkpoint}.pt', as_attachment=True)
+    ckpt = db.query_db(f'SELECT * FROM ckpt WHERE id = {checkpoint}', one = True)
+    models = db.get_models(checkpoint)
 
+    model_data = io.BytesIO()
+
+    with zipfile.ZipFile(model_data, mode='w') as z:
+        for model in models:
+            model_path = os.path.join(app.config['CHECKPOINT_FOLDER'], f'{model["id"]}.pt')
+            z.write(model_path, os.path.basename(model_path))
+
+    model_data.seek(0)
+
+    return send_file(
+        model_data,
+        mimetype='application/zip',
+        as_attachment=True,
+        attachment_filename=f'{ckpt["ckpt_name"]}.zip',
+        cache_timeout=-1
+    )
 
 @app.route('/checkpoints/delete/<int:checkpoint>')
 @check_not_demo
@@ -511,5 +548,4 @@ def delete_checkpoint(checkpoint: int):
     :param checkpoint: The id of the checkpoint to delete.
     """
     db.delete_ckpt(checkpoint)
-    os.remove(os.path.join(app.config['CHECKPOINT_FOLDER'], str(checkpoint) + '.pt'))
     return redirect(url_for('checkpoints'))
