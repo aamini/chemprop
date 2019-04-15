@@ -2,10 +2,14 @@ from argparse import ArgumentParser
 import csv
 import os
 import sys
+from typing import List
 
+from matplotlib import offsetbox
+import matplotlib.pyplot as plt
 import numpy as np
 from rdkit import Chem
 from rdkit.Chem import Draw
+from sklearn.manifold import TSNE
 from sklearn.cluster import KMeans
 from tqdm import tqdm, trange
 
@@ -13,6 +17,44 @@ sys.path.append(os.path.dirname(os.path.dirname(os.path.realpath(__file__))))
 
 from chemprop.utils import makedirs
 from chemprop.features import get_features_generator
+
+
+def plot_kmeans_with_tsne(smiles: List[str],
+                          morgans: List[np.ndarray],
+                          cluster_labels: List[int],
+                          num_clusters: int,
+                          save_dir: str):
+    print('Running T-SNE')
+    tsne = TSNE(n_components=2, init='pca', random_state=0)
+    X = tsne.fit_transform(morgans)
+
+    print('Plotting K-Means/T-SNE')
+    x_min, x_max = np.min(X, axis=0), np.max(X, axis=0)
+    X = (X - x_min) / (x_max - x_min)
+
+    plt.figure(figsize=(6.4 * 20, 4.8 * 20))
+    ax = plt.subplot(111)
+    for i in range(X.shape[0]):
+        plt.text(X[i, 0], X[i, 1], str(cluster_labels[i]),
+                 color=plt.cm.rainbow(cluster_labels[i] / num_clusters),
+                 fontdict={'weight': 'bold', 'size': 40})
+
+    if hasattr(offsetbox, 'AnnotationBbox'):
+        # only print thumbnails with matplotlib > 1.0
+        shown_images = np.array([[1., 1.]])  # just something big
+        for i in range(X.shape[0]):
+            dist = np.sum((X[i] - shown_images) ** 2, 1)
+            if np.min(dist) < 4e-3:
+                # don't show points that are too close
+                continue
+            shown_images = np.r_[shown_images, [X[i]]]
+            img = Draw.MolsToGridImage([Chem.MolFromSmiles(smiles[i])], molsPerRow=1)
+            imagebox = offsetbox.AnnotationBbox(
+                offsetbox.OffsetImage(img, cmap=plt.cm.gray_r),
+                X[i])
+            ax.add_artist(imagebox)
+    plt.xticks([]), plt.yticks([])
+    plt.savefig(os.path.join(save_dir, 'kmeans_tsne.png'))
 
 
 def cluster_zinc_molecules(data_path: str,
@@ -60,7 +102,7 @@ def cluster_zinc_molecules(data_path: str,
 
         # Save image of top molecule
         mol = Chem.MolFromSmiles(top_datapoint['smiles'])
-        Draw.MolToFile(mol, os.path.join(cluster_dir, f'center_{top_datapoint["zinc_index"]}.png'))
+        Draw.MolToFile(mol, os.path.join(cluster_dir, f'cluster_{cluster}_top_{top_datapoint["zinc_index"]}.png'))
 
         # Find molecule neareest to cluster center
         center_datapoint, center_distance = None, float('inf')
@@ -72,7 +114,7 @@ def cluster_zinc_molecules(data_path: str,
 
         # Save image of cluster center
         mol = Chem.MolFromSmiles(center_datapoint['smiles'])
-        Draw.MolToFile(mol, os.path.join(cluster_dir, f'center_{center_datapoint["zinc_index"]}.png'))
+        Draw.MolToFile(mol, os.path.join(cluster_dir, f'cluster_{cluster}_center_{center_datapoint["zinc_index"]}.png'))
 
         # Pop morgan vector
         for datapoint in cluster_data:
@@ -83,6 +125,15 @@ def cluster_zinc_molecules(data_path: str,
             writer = csv.DictWriter(f, fieldnames=fieldnames)
             writer.writeheader()
             writer.writerows(cluster_data)
+
+    # Plot kmeans
+    plot_kmeans_with_tsne(
+        smiles=[datapoint['smiles'] for datapoint in data],
+        morgans=morgans,
+        cluster_labels=kmeans.labels_,
+        num_clusters=num_clusters,
+        save_dir=save_dir
+    )
 
 
 if __name__ == '__main__':
