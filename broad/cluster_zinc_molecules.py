@@ -19,16 +19,14 @@ from chemprop.utils import makedirs
 from chemprop.features import get_features_generator
 
 
-def plot_kmeans_with_tsne(smiles: List[str],
-                          morgans: List[np.ndarray],
+def plot_kmeans_with_tsne(X: np.ndarray,
+                          smiles: List[str],
                           cluster_labels: List[int],
+                          cluster_center_indices: List[int],
+                          top_indices: List[int],
                           num_clusters: int,
-                          save_dir: str):
-    print('Running T-SNE')
-    tsne = TSNE(n_components=2, init='pca', random_state=0)
-    X = tsne.fit_transform(morgans)
-
-    print('Plotting K-Means/T-SNE')
+                          save_dir: str,
+                          display_type: str):
     x_min, x_max = np.min(X, axis=0), np.max(X, axis=0)
     X = (X - x_min) / (x_max - x_min)
 
@@ -41,20 +39,31 @@ def plot_kmeans_with_tsne(smiles: List[str],
 
     if hasattr(offsetbox, 'AnnotationBbox'):
         # only print thumbnails with matplotlib > 1.0
-        shown_images = np.array([[1., 1.]])  # just something big
-        for i in range(X.shape[0]):
-            dist = np.sum((X[i] - shown_images) ** 2, 1)
-            if np.min(dist) < 4e-3:
-                # don't show points that are too close
-                continue
-            shown_images = np.r_[shown_images, [X[i]]]
-            img = Draw.MolsToGridImage([Chem.MolFromSmiles(smiles[i])], molsPerRow=1, subImgSize=(400, 400))
-            imagebox = offsetbox.AnnotationBbox(
-                offsetbox.OffsetImage(img, cmap=plt.cm.gray_r),
-                X[i])
-            ax.add_artist(imagebox)
+        if display_type == 'random':
+            shown_images = np.array([[1., 1.]])  # just something big
+            for i in range(X.shape[0]):
+                dist = np.sum((X[i] - shown_images) ** 2, 1)
+                if np.min(dist) < 4e-3:
+                    # don't show points that are too close
+                    continue
+                shown_images = np.r_[shown_images, [X[i]]]
+                img = Draw.MolsToGridImage([Chem.MolFromSmiles(smiles[i])], molsPerRow=1, subImgSize=(400, 400))
+                imagebox = offsetbox.AnnotationBbox(
+                    offsetbox.OffsetImage(img, cmap=plt.cm.gray_r),
+                    X[i])
+                ax.add_artist(imagebox)
+        elif display_type in ['center', 'top']:
+            indices = cluster_center_indices if display_type == 'center' else top_indices
+            for i in indices:
+                img = Draw.MolsToGridImage([Chem.MolFromSmiles(smiles[i])], molsPerRow=1, subImgSize=(400, 400))
+                imagebox = offsetbox.AnnotationBbox(
+                    offsetbox.OffsetImage(img, cmap=plt.cm.gray_r),
+                    X[i])
+                ax.add_artist(imagebox)
+        else:
+            raise ValueError(f'Display type {display_type} not supported.')
     plt.xticks([]), plt.yticks([])
-    plt.savefig(os.path.join(save_dir, 'kmeans_tsne.png'))
+    plt.savefig(os.path.join(save_dir, f'kmeans_tsne_{display_type}.png'))
 
 
 def cluster_zinc_molecules(data_path: str,
@@ -79,11 +88,13 @@ def cluster_zinc_molecules(data_path: str,
 
     # Determine mapping from cluster index to datapoints in that cluster
     clusters = [[] for _ in range(num_clusters)]
-    for cluster, datapoint in zip(kmeans.labels_, data):
+    for index, (cluster, datapoint) in enumerate(zip(kmeans.labels_, data)):
+        datapoint['index'] = index
         clusters[cluster].append(datapoint)
 
     # Save clustering and images of cluster centers
     print('Saving clusters')
+    cluster_center_indices, top_indices = [], []
     for cluster in trange(num_clusters):
         # Make cluster directory
         cluster_dir = os.path.join(save_dir, f'cluster_{cluster}')
@@ -99,6 +110,7 @@ def cluster_zinc_molecules(data_path: str,
 
         # Get top molecule
         top_datapoint = cluster_data[0]
+        top_indices.append(top_datapoint['index'])
 
         # Save image of top molecule
         mol = Chem.MolFromSmiles(top_datapoint['smiles'])
@@ -111,13 +123,15 @@ def cluster_zinc_molecules(data_path: str,
             if distance < center_distance:
                 center_distance = distance
                 center_datapoint = datapoint
+        cluster_center_indices.append(center_datapoint['index'])
 
         # Save image of cluster center
         mol = Chem.MolFromSmiles(center_datapoint['smiles'])
         Draw.MolToFile(mol, os.path.join(cluster_dir, f'cluster_{cluster}_center_{center_datapoint["zinc_index"]}.png'))
 
-        # Pop morgan vector
+        # Pop unneeded keys
         for datapoint in cluster_data:
+            del datapoint['index']
             del datapoint['morgan']
 
         # Save cluster data
@@ -126,14 +140,23 @@ def cluster_zinc_molecules(data_path: str,
             writer.writeheader()
             writer.writerows(cluster_data)
 
-    # Plot kmeans
-    plot_kmeans_with_tsne(
-        smiles=[datapoint['smiles'] for datapoint in data],
-        morgans=morgans,
-        cluster_labels=kmeans.labels_,
-        num_clusters=num_clusters,
-        save_dir=save_dir
-    )
+    print('Running T-SNE')
+    tsne = TSNE(n_components=2, init='pca', random_state=0)
+    X = tsne.fit_transform(morgans)
+
+    print('Plotting K-Means/T-SNE')
+    smiles = [datapoint['smiles'] for datapoint in data]
+    for display_type in ['random', 'center', 'top']:
+        plot_kmeans_with_tsne(
+            X=X,
+            smiles=smiles,
+            cluster_labels=kmeans.labels_,
+            cluster_center_indices=cluster_center_indices,
+            top_indices=top_indices,
+            num_clusters=num_clusters,
+            save_dir=save_dir,
+            display_type=display_type
+        )
 
 
 if __name__ == '__main__':
