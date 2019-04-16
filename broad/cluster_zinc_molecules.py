@@ -32,12 +32,12 @@ def plot_kmeans_with_tsne(smiles: List[str],
     x_min, x_max = np.min(X, axis=0), np.max(X, axis=0)
     X = (X - x_min) / (x_max - x_min)
 
-    plt.figure(figsize=(6.4 * 20, 4.8 * 20))
+    plt.figure(figsize=(6.4 * 40, 4.8 * 40))
     ax = plt.subplot(111)
     for i in range(X.shape[0]):
         plt.text(X[i, 0], X[i, 1], str(cluster_labels[i]),
                  color=plt.cm.rainbow(cluster_labels[i] / num_clusters),
-                 fontdict={'weight': 'bold', 'size': 40})
+                 fontdict={'weight': 'bold', 'size': 80})
 
     if hasattr(offsetbox, 'AnnotationBbox'):
         # only print thumbnails with matplotlib > 1.0
@@ -48,7 +48,7 @@ def plot_kmeans_with_tsne(smiles: List[str],
                 # don't show points that are too close
                 continue
             shown_images = np.r_[shown_images, [X[i]]]
-            img = Draw.MolsToGridImage([Chem.MolFromSmiles(smiles[i])], molsPerRow=1)
+            img = Draw.MolsToGridImage([Chem.MolFromSmiles(smiles[i])], molsPerRow=1, subImgSize=(400, 400))
             imagebox = offsetbox.AnnotationBbox(
                 offsetbox.OffsetImage(img, cmap=plt.cm.gray_r),
                 X[i])
