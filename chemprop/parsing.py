@@ -169,6 +169,8 @@ def add_train_args(parser: ArgumentParser):
     parser.add_argument('--confidence', type=str,
                         choices=[None, 'gaussian', 'random_forest', 'ensemble', 'tanimoto', 'conformal', 'probability'], default=None,
                         help='Measure confidence values for the prediction.')
+    parser.add_argument('--save_confidence', type=str, default=None,
+                        help='Measure confidence values for the prediction.')
     parser.add_argument('--last_hidden_size', type=int, default=300,
                         help='Size of last hidden layer.')
     parser.add_argument('--g_bootstrap', action='store_true', default=False,
