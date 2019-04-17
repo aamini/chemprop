@@ -293,11 +293,12 @@ def run_training(args: Namespace, logger: Logger = None) -> List[float]:
         if args.confidence == 'gaussian' or args.confidence == 'random_forest':
             model.eval()
             model.use_last_hidden = False
+
             last_hidden = predict(
                 model=model,
                 data=val_data,
                 batch_size=args.batch_size,
-                scaler=scaler
+                scaler=None
             )
 
             sum_last_hidden += np.array(last_hidden)
@@ -306,7 +307,7 @@ def run_training(args: Namespace, logger: Logger = None) -> List[float]:
                 model=model,
                 data=test_data,
                 batch_size=args.batch_size,
-                scaler=scaler
+                scaler=None
             )
 
             sum_last_hidden_test += np.array(last_hidden_test)
@@ -342,6 +343,7 @@ def run_training(args: Namespace, logger: Logger = None) -> List[float]:
         dataset_type=args.dataset_type,
         logger=logger
     )
+
     # Average ensemble score
     avg_ensemble_test_score = np.nanmean(ensemble_scores)
     info(f'Ensemble test {args.metric} = {avg_ensemble_test_score:.6f}')
@@ -350,40 +352,59 @@ def run_training(args: Namespace, logger: Logger = None) -> List[float]:
 
     if args.confidence and args.dataset_type == 'regression':
         if args.confidence == 'gaussian':
-            kernel = GPy.kern.Linear(input_dim=args.last_hidden_size)
-            gaussian = GPy.models.GPRegression(
-                avg_last_hidden, transformed_val, kernel)
-            gaussian.optimize()
+            # TODO: Scale confidence to reflect scaled predictions.
+            predictions = np.ndarray(
+                shape=(len(test_smiles), args.num_tasks))
+            confidence = np.ndarray(
+                shape=(len(test_smiles), args.num_tasks))
 
-            avg_test_preds, avg_test_var = gaussian.predict(
-                avg_last_hidden_test[:])
+            for task in range(args.num_tasks):
+                kernel = GPy.kern.Linear(input_dim=args.last_hidden_size)
+                gaussian = GPy.models.SparseGPRegression(
+                    avg_last_hidden, transformed_val[:, task:task+1], kernel)
+                gaussian.optimize()
 
-            # Scale Data
-            domain = np.max(avg_test_var) - np.min(avg_test_var)
-            # Shift.
-            avg_test_var = avg_test_var - np.min(avg_test_var)
-            # Scale domain to 1.
-            avg_test_var = avg_test_var / domain
-            # Apply log scale and flip.
-            avg_test_var = np.maximum(0, -np.log(avg_test_var + np.exp(-10)))
+                avg_test_preds, avg_test_var = gaussian.predict(
+                    avg_last_hidden_test)
 
-            predictions = np.array(
-                [scaler.inverse_transform(i[0]) for i in avg_test_preds])
-            confidence = np.array([i[0] for i in avg_test_var])
+                # Scale Data
+                domain = np.max(avg_test_var) - np.min(avg_test_var)
+                # Shift.
+                avg_test_var = avg_test_var - np.min(avg_test_var)
+                # Scale domain to 1.
+                avg_test_var = avg_test_var / domain
+                # Apply log scale and flip.
+                avg_test_var = np.maximum(
+                    0, -np.log(avg_test_var + np.exp(-10)))
+
+                predictions[:, task:task+1] = avg_test_preds
+                confidence[:, task:task+1] = avg_test_var
+
+            predictions = scaler.inverse_transform(predictions)
         elif args.confidence == 'random_forest':
-            n_trees = 2000
-            forest = RandomForestRegressor(n_estimators=n_trees)
-            forest.fit(avg_last_hidden, transformed_val)
+            # TODO: Scale confidence to reflect scaled predictions.
+            predictions = np.ndarray(
+                shape=(len(test_smiles), args.num_tasks))
+            confidence = np.ndarray(
+                shape=(len(test_smiles), args.num_tasks))
 
-            avg_test_preds = forest.predict(avg_last_hidden_test[:])
+            n_trees = 200
+            for task in range(args.num_tasks):
+                forest = RandomForestRegressor(n_estimators=n_trees)
+                forest.fit(avg_last_hidden, transformed_val[:, task])
 
-            predictions = np.array(
-                [scaler.inverse_transform(i) for i in avg_test_preds])
-            confidence = fci.random_forest_error(
-                forest, avg_last_hidden, avg_last_hidden_test[:]) * (-1)
+                avg_test_preds = forest.predict(avg_last_hidden_test)
+                predictions[:, task] = avg_test_preds
+
+                avg_test_var = fci.random_forest_error(
+                    forest, avg_last_hidden, avg_last_hidden_test) * (-1)
+                confidence[:, task] = avg_test_var
+
+            predictions = scaler.inverse_transform(predictions)
         elif args.confidence == 'tanimoto':
             predictions = avg_test_preds
-            confidence = []
+            confidence = np.ndarray(
+                shape=(len(test_smiles), args.num_tasks))
 
             train_smiles_sfp = [morgan_fingerprint(s) for s in train_smiles]
             for i in range(len(test_smiles)):
@@ -396,16 +417,18 @@ def run_training(args: Namespace, logger: Logger = None) -> List[float]:
                     morgan_sim.append(
                         (tsim, np.abs(avg_test_preds[i] - test_targets[i][0])))
                 morgan_sim, error = max(morgan_sim, key=lambda x: x[0])
-                confidence.append(morgan_sim)
-
-            confidence = np.array(confidence) * 10
+                confidence[i, :] = np.ones((args.num_tasks)) * morgan_sim
 
         elif args.confidence == 'ensemble':
             predictions = avg_test_preds
             confidence = np.var(all_test_preds, axis=2) * -1
 
-        confidence_visualizations(args, predictions=predictions, targets=np.array(
-            test_targets), confidence=confidence)
+        targets = np.array(test_targets)
+        for task in range(args.num_tasks):
+            confidence_visualizations(args,
+                                      predictions=predictions[:, task],
+                                      targets=targets[:, task],
+                                      confidence=confidence[:, task])
 
     if args.confidence and args.dataset_type == 'classification':
         if args.confidence == 'gaussian':
@@ -426,13 +449,18 @@ def run_training(args: Namespace, logger: Logger = None) -> List[float]:
             forest = RandomForestClassifier(n_estimators=n_trees)
             forest.fit(avg_last_hidden, np.array(val_data.targets()))
 
-            predictions = np.array([[i] for i in forest.predict(avg_last_hidden_test[:])])
+            predictions = np.array(
+                [[i] for i in forest.predict(avg_last_hidden_test[:])])
 
             confidence = fci.random_forest_error(
                 forest, avg_last_hidden, avg_last_hidden_test[:]) * (-1)
 
-        confidence_visualizations(args, predictions=predictions, targets=np.array(
-            test_targets), confidence=confidence)
+        targets = np.array(test_targets)
+        for task in range(args.num_tasks):
+            confidence_visualizations(args,
+                                      predictions=predictions[:, task],
+                                      targets=targets[:, task],
+                                      confidence=confidence[:, task])
 
     # Individual ensemble scores
     if args.show_individual_scores:
@@ -460,15 +488,15 @@ def confidence_visualizations(args: Namespace, predictions: List[Union[float, in
             kept = (len(sets_by_confidence) - c) / len(sets_by_confidence)
 
             accuracy = evaluate_predictions(
-                preds=[pair[2] for pair in sets_by_confidence[c:]],
-                targets=[pair[3] for pair in sets_by_confidence[c:]],
-                num_tasks=args.num_tasks,
+                preds=[[pair[2]] for pair in sets_by_confidence[c:]],
+                targets=[[pair[3]] for pair in sets_by_confidence[c:]],
+                num_tasks=1,
                 metric_func=metric_func,
                 dataset_type=args.dataset_type
             )
 
-            print(f'Cutoff: {sets_by_confidence[c][0]:5.2f}',
-                  f'{args.metric}: {accuracy[0]:5.2f}',
+            print(f'Cutoff: {sets_by_confidence[c][0]:5.3f}',
+                  f'{args.metric}: {accuracy[0]:5.3f}',
                   f'% Results Kept: {int(kept*100)}%')
 
         print(f'----Cutoffs Generated by Ideal Confidence Estimator----')
@@ -478,14 +506,14 @@ def confidence_visualizations(args: Namespace, predictions: List[Union[float, in
             kept = c / len(sets_by_error)
 
             accuracy = evaluate_predictions(
-                preds=[pair[2] for pair in sets_by_error[:c]],
-                targets=[pair[3] for pair in sets_by_error[:c]],
-                num_tasks=args.num_tasks,
+                preds=[[pair[2]] for pair in sets_by_error[:c]],
+                targets=[[pair[3]] for pair in sets_by_error[:c]],
+                num_tasks=1,
                 metric_func=metric_func,
                 dataset_type=args.dataset_type
             )
 
-            print(f'{args.metric}: {accuracy[0]:5.2f}',
+            print(f'{args.metric}: {accuracy[0]:5.3f}',
                   f'% Results Kept: {int(kept*100)}%')
 
     plt.plot(confidence, error, 'ro')
