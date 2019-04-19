@@ -33,11 +33,38 @@ def plot_kmeans_with_tsne(X: np.ndarray,
     plt.figure(figsize=(6.4 * 40, 4.8 * 40))
     ax = plt.subplot(111)
     for i in range(X.shape[0]):
-        plt.text(X[i, 0], X[i, 1], str(cluster_labels[i]),
-                 color=plt.cm.rainbow(cluster_labels[i] / num_clusters),
-                 fontdict={'weight': 'bold', 'size': 80})
+        color = plt.cm.rainbow(cluster_labels[i] / num_clusters)
 
-    if hasattr(offsetbox, 'AnnotationBbox'):
+        if display_type == 'points':
+            plt.plot(X[i, 0], X[i, 1], marker='o', markersize=40, color=color)
+        else:
+            plt.text(X[i, 0], X[i, 1], str(cluster_labels[i]),
+                     color=color, fontdict={'weight': 'bold', 'size': 80})
+
+    # Display cluster number in cluster center if points display
+    if display_type == 'points':
+        # Find cluster centers
+        clusters = [[] for _ in range(num_clusters)]
+        for i in range(len(X)):
+            clusters[cluster_labels[i]].append(X[i])
+        cluster_centers = [np.mean(cluster, axis=0) for cluster in clusters]
+
+        # Plot cluster centers
+        for cluster, cluster_center in enumerate(cluster_centers):
+            edgecolor = plt.cm.rainbow(cluster / num_clusters)
+            facecolor = (*edgecolor[:-1], 0.2)  # make facecolor translucent
+
+            x, y = cluster_center[0], cluster_center[1]
+
+            plt.text(x, y, str(cluster),
+                     ha="center", va="center",
+                     bbox=dict(boxstyle="square",
+                               edgecolor=edgecolor,
+                               facecolor=facecolor),
+                     fontdict={'weight': 'bold', 'size': 160})
+
+    # Otherwise show images of molecules
+    elif hasattr(offsetbox, 'AnnotationBbox'):
         # only print thumbnails with matplotlib > 1.0
         if display_type == 'random':
             shown_images = np.array([[1., 1.]])  # just something big
@@ -62,6 +89,7 @@ def plot_kmeans_with_tsne(X: np.ndarray,
                 ax.add_artist(imagebox)
         else:
             raise ValueError(f'Display type {display_type} not supported.')
+
     plt.xticks([]), plt.yticks([])
     plt.savefig(os.path.join(save_dir, f'kmeans_tsne_{display_type}.png'))
 
@@ -146,7 +174,7 @@ def cluster_zinc_molecules(data_path: str,
 
     print('Plotting K-Means/T-SNE')
     smiles = [datapoint['smiles'] for datapoint in data]
-    for display_type in ['random', 'center', 'top']:
+    for display_type in ['points']:  # ['points', 'random', 'center', 'top']:
         plot_kmeans_with_tsne(
             X=X,
             smiles=smiles,
