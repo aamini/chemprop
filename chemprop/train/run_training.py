@@ -435,8 +435,10 @@ def run_training(args: Namespace, logger: Logger = None) -> List[float]:
 
             for task in range(args.num_tasks):
                 kernel = GPy.kern.Linear(input_dim=args.last_hidden_size)
+
+                mask = val_targets[:, task] != None
                 gaussian = GPy.models.GPClassification(
-                    avg_last_hidden, val_targets[:, task:task+1], kernel)
+                    avg_last_hidden[mask, :], val_targets[mask, task:task+1], kernel)
                 gaussian.optimize()
 
                 avg_test_preds, _ = gaussian.predict(
@@ -458,13 +460,16 @@ def run_training(args: Namespace, logger: Logger = None) -> List[float]:
             n_trees = 100
             for task in range(args.num_tasks):
                 forest = RandomForestClassifier(n_estimators=n_trees)
-                forest.fit(avg_last_hidden, val_targets[:, task])
+
+                mask = val_targets[:, task] != None
+                print(val_targets[mask, task], avg_last_hidden[mask, :])
+                forest.fit(avg_last_hidden[mask, :], val_targets[mask, task])
 
                 avg_test_preds = forest.predict(avg_last_hidden_test)
                 predictions[:, task] = avg_test_preds
 
                 avg_test_var = fci.random_forest_error(
-                    forest, avg_last_hidden, avg_last_hidden_test) * (-1)
+                    forest, avg_last_hidden[mask, :], avg_last_hidden_test) * (-1)
                 confidence[:, task] = avg_test_var
 
     if args.confidence:
@@ -476,10 +481,12 @@ def run_training(args: Namespace, logger: Logger = None) -> List[float]:
         targets = np.array(test_targets)
         for task in range(args.num_tasks):
             accuracy_sublog = []
+            
+            mask = targets[:, task] != None
             confidence_visualizations(args,
-                                      predictions=predictions[:, task],
-                                      targets=targets[:, task],
-                                      confidence=confidence[:, task],
+                                      predictions=np.extract(mask, predictions[:, task]),
+                                      targets=np.extract(mask, targets[:, task]),
+                                      confidence=np.extract(mask, confidence[:, task]),
                                       accuracy_sublog=accuracy_sublog)
 
             accuracy_log[args.task_names[task]] = accuracy_sublog
