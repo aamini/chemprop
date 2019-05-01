@@ -1,5 +1,6 @@
 from argparse import Namespace
 import csv
+import heapq
 import json
 from logging import Logger
 import os
@@ -176,11 +177,14 @@ def run_training(args: Namespace, logger: Logger = None) -> List[float]:
     all_test_preds = np.zeros(
         (len(test_smiles), args.num_tasks, args.ensemble_size))
 
-    if args.confidence == 'gaussian' or args.confidence == 'random_forest':
+    if args.confidence in ['gaussian', 'random_forest', 'conformal']:
         sum_last_hidden = np.zeros(
             (len(val_data.smiles()), args.last_hidden_size))
         sum_last_hidden_test = np.zeros(
             (len(test_smiles), args.last_hidden_size))
+    
+    if args.confidence in ['nn']:
+        sum_test_confidence = np.zeros((len(test_smiles), args.num_tasks))
 
     # Train ensemble of models
     for model_idx in range(args.ensemble_size):
@@ -272,12 +276,21 @@ def run_training(args: Namespace, logger: Logger = None) -> List[float]:
         model = load_checkpoint(os.path.join(
             save_dir, 'model.pt'), cuda=args.cuda, logger=logger)
 
-        test_preds = predict(
-            model=model,
-            data=test_data,
-            batch_size=args.batch_size,
-            scaler=scaler
-        )
+        if args.confidence in ['nn']:
+            test_preds, test_confidence = predict(
+                model=model,
+                data=test_data,
+                batch_size=args.batch_size,
+                scaler=scaler,
+                confidence=True
+            )
+        else:
+            test_preds = predict(
+                model=model,
+                data=test_data,
+                batch_size=args.batch_size,
+                scaler=scaler,
+            )
         test_scores = evaluate_predictions(
             preds=test_preds,
             targets=test_targets,
@@ -289,9 +302,12 @@ def run_training(args: Namespace, logger: Logger = None) -> List[float]:
 
         if len(test_preds) != 0:
             sum_test_preds += np.array(test_preds)
+
+            if args.confidence in ['nn']:
+                sum_test_confidence += np.array(test_confidence)
             all_test_preds[:, :, model_idx] = np.array(test_preds)
 
-        if args.confidence == 'gaussian' or args.confidence == 'random_forest':
+        if args.confidence in ['gaussian', 'random_forest', 'conformal']:
             model.eval()
             model.use_last_hidden = False
 
@@ -329,7 +345,7 @@ def run_training(args: Namespace, logger: Logger = None) -> List[float]:
     # Evaluate ensemble on test set
     avg_test_preds = (sum_test_preds / args.ensemble_size)
 
-    if args.confidence == 'gaussian' or args.confidence == 'random_forest':
+    if args.confidence in ['gaussian', 'random_forest', 'conformal']:
         avg_last_hidden = sum_last_hidden / args.ensemble_size
         avg_last_hidden_test = sum_last_hidden_test / args.ensemble_size
 
@@ -419,10 +435,13 @@ def run_training(args: Namespace, logger: Logger = None) -> List[float]:
                         (tsim, np.abs(avg_test_preds[i] - test_targets[i][0])))
                 morgan_sim, error = max(morgan_sim, key=lambda x: x[0])
                 confidence[i, :] = np.ones((args.num_tasks)) * morgan_sim
-
         elif args.confidence == 'ensemble':
             predictions = avg_test_preds
             confidence = np.var(all_test_preds, axis=2) * -1
+        elif args.confidence == 'nn':
+            predictions = avg_test_preds
+            confidence = sum_test_confidence / args.ensemble_size * (-1)
+
 
     if args.confidence and args.dataset_type == 'classification':
         if args.confidence == 'gaussian':
@@ -470,13 +489,33 @@ def run_training(args: Namespace, logger: Logger = None) -> List[float]:
 
                 avg_test_var = fci.random_forest_error(
                     forest, avg_last_hidden[mask, :], avg_last_hidden_test) * (-1)
-                confidence[:, task] = avg_test_var
+                confidence[:, task] = avg_test_var    
+        elif args.confidence == 'conformal':
+            predictions = avg_test_preds
+            confidence = np.ndarray(
+                shape=(len(test_smiles), args.num_tasks))
+
+            val_targets = np.array(val_data.targets())
+            for task in range(args.num_tasks):
+                non_conformity = np.ndarray(shape=(len(val_targets)))
+
+                for i in range(len(val_targets)):
+                    non_conformity[i] = kNN(avg_last_hidden[i, :], val_targets[i, task], avg_last_hidden, val_targets[:, task])
+                
+                for i in range(len(test_smiles)):
+                    alpha = kNN(avg_last_hidden_test[i, :], round(predictions[i, task]), avg_last_hidden, val_targets[:, task])
+
+                    if alpha == None:
+                        confidence[i, task] = 0
+                        continue
+
+                    non_null = non_conformity[non_conformity != None]
+                    confidence[i, task] = np.sum(non_null >= alpha) / len(non_null)
 
     if args.confidence:
-        accuracy_log = None
+        accuracy_log = {}
         if args.save_confidence:
             f = open(args.save_confidence, 'w+')
-            accuracy_log = {}
 
         targets = np.array(test_targets)
         for task in range(args.num_tasks):
@@ -517,7 +556,7 @@ def confidence_visualizations(args: Namespace,
 
     metric_func = get_metric_func(metric=args.metric)
 
-    if args.g_cutoff_discrete:
+    if args.c_cutoff_discrete:
         print(
             f'----Cutoffs Generated Using "{args.confidence}" Estimation Process----')
         for i in range(10):
@@ -558,7 +597,7 @@ def confidence_visualizations(args: Namespace,
             print(f'{args.metric}: {accuracy[0]:5.3f}',
                   f'% Results Kept: {int(kept*100)}%')
 
-    if args.g_cutoff:
+    if args.c_cutoff:
         cutoff = []
         rmse = []
         square_error = [pair[1]*pair[1] for pair in sets_by_confidence]
@@ -568,7 +607,7 @@ def confidence_visualizations(args: Namespace,
 
         plt.plot(cutoff, rmse)
 
-    if args.g_bootstrap:
+    if args.c_bootstrap:
         # Perform Bootstrapping at 95% confidence.
         sum_subset = sum([val[0]
                           for val in sets_by_confidence[:args.bootstrap[0]]])
@@ -591,10 +630,10 @@ def confidence_visualizations(args: Namespace,
 
         plt.plot(x_confidence, y_confidence)
 
-    if args.g_cutoff or args.g_bootstrap:
+    if args.c_cutoff or args.c_bootstrap:
         plt.show()
 
-    if args.g_histogram:
+    if args.c_histogram:
         scale = np.average(error) * 5
 
         for i in range(5):
@@ -606,7 +645,7 @@ def confidence_visualizations(args: Namespace,
             plt.hist(errors, bins=10, range=(0, scale))
             plt.show()
 
-    if args.g_joined_histogram:
+    if args.c_joined_histogram:
         bins = 8
         scale = np.average(error) * bins / 2
 
@@ -650,7 +689,7 @@ def confidence_visualizations(args: Namespace,
 
         plt.show()
 
-    if args.g_joined_boxplot:
+    if args.c_joined_boxplot:
         errors_by_confidence = [[] for _ in range(10)]
         for pair in sets_by_confidence:
             if pair[0] == 10:
@@ -669,3 +708,25 @@ def confidence_visualizations(args: Namespace,
         plt.ylabel("Absolute Value of Error")
         plt.legend()
         plt.show()
+
+def kNN(x, y, values, targets):
+    if y == None:
+        return None
+                  
+    same_class_distances = []
+    other_class_distances = []
+    for i in range(len(values)):
+        if np.all(x == values[i]) or targets[i] == None:
+            continue
+        
+        distance = np.linalg.norm(x - values[i, :])
+        if y == targets[i]:
+            same_class_distances.append(distance)
+        else:
+            other_class_distances.append(distance)
+    
+    if len(other_class_distances) == 0 or len(same_class_distances) == 0:
+        return None
+
+    size = min([10, len(same_class_distances), len(other_class_distances)])
+    return np.sum(heapq.nsmallest(size, same_class_distances)) / np.sum(heapq.nsmallest(size, other_class_distances))

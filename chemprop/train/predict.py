@@ -10,7 +10,8 @@ from chemprop.data import MoleculeDataset, StandardScaler
 def predict(model: nn.Module,
             data: MoleculeDataset,
             batch_size: int,
-            scaler: StandardScaler = None) -> List[List[float]]:
+            scaler: StandardScaler = None,
+            confidence: bool = False) -> List[List[float]]:
     """
     Makes predictions on a dataset using an ensemble of models.
 
@@ -18,6 +19,7 @@ def predict(model: nn.Module,
     :param data: A MoleculeDataset.
     :param batch_size: Batch size.
     :param scaler: A StandardScaler object fit on the training targets.
+    :param confidence: Whether confidence values should be returned.
     :return: A list of lists of predictions. The outer list is examples
     while the inner list is tasks.
     """
@@ -47,5 +49,16 @@ def predict(model: nn.Module,
         # Collect vectors
         batch_preds = batch_preds.tolist()
         preds.extend(batch_preds)
+    
+    if model.confidence:
+        p = []
+        c = []
+        for i in range(len(preds)):
+            p.append([preds[i][j] for j in range(len(preds[i])) if j % 2 == 0])
+            c.append([preds[i][j] for j in range(len(preds[i])) if j % 2 == 1])
+        
+        if confidence:
+            return p, c
+        return p
 
     return preds

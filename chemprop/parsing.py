@@ -167,25 +167,25 @@ def add_train_args(parser: ArgumentParser):
 
     # Confidence Arguments
     parser.add_argument('--confidence', type=str,
-                        choices=[None, 'gaussian', 'random_forest', 'ensemble', 'tanimoto', 'conformal', 'probability'], default=None,
+                        choices=[None, 'gaussian', 'random_forest', 'ensemble', 'tanimoto', 'conformal', 'probability', 'conformal', 'nn'], default=None,
                         help='Measure confidence values for the prediction.')
     parser.add_argument('--save_confidence', type=str, default=None,
                         help='Measure confidence values for the prediction.')
     parser.add_argument('--last_hidden_size', type=int, default=300,
                         help='Size of last hidden layer.')
-    parser.add_argument('--g_bootstrap', action='store_true', default=False,
+    parser.add_argument('--c_bootstrap', action='store_true', default=False,
                         help='Display a chart representing bootstrapping with 95% confidence.')
-    parser.add_argument('--g_bootstrap_size', type=int, nargs=3, default=[400, 200, 500],
+    parser.add_argument('--c_bootstrap_size', type=int, nargs=3, default=[400, 200, 500],
                         help='Bootstrap sample sizes for confidence estimation.')
-    parser.add_argument('--g_histogram', action='store_true', default=False,
+    parser.add_argument('--c_histogram', action='store_true', default=False,
                         help='Display a chart showing confidence intervals from Gaussian process.')
-    parser.add_argument('--g_joined_histogram', action='store_true', default=False,
+    parser.add_argument('--c_joined_histogram', action='store_true', default=False,
                         help='Display a joined chart showing histograms from Gaussian process.')
-    parser.add_argument('--g_joined_boxplot', action='store_true', default=False,
+    parser.add_argument('--c_joined_boxplot', action='store_true', default=False,
                         help='Display a joined chart showing boxplots from Gaussian process.')
-    parser.add_argument('--g_cutoff', action='store_true', default=False,
+    parser.add_argument('--c_cutoff', action='store_true', default=False,
                         help='Display a joined chart showing accuracy for differ cutoffs.')
-    parser.add_argument('--g_cutoff_discrete', action='store_true', default=False,
+    parser.add_argument('--c_cutoff_discrete', action='store_true', default=False,
                         help='Display discrete cutoffs and associate rmse.')
 
 

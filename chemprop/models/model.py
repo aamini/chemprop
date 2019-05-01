@@ -10,15 +10,17 @@ from chemprop.nn_utils import get_activation_function, initialize_weights
 class MoleculeModel(nn.Module):
     """A MoleculeModel is a model which contains a message passing network following by feed-forward layers."""
 
-    def __init__(self, classification: bool, gaussian: bool = False):
+    def __init__(self, classification: bool, confidence: bool = False):
         """
         Initializes the MoleculeModel.
 
         :param classification: Whether the model is a classification model.
+        :param confidence: Whether confidence values should be predicted.
         """
         super(MoleculeModel, self).__init__()
 
         self.classification = classification
+        self.confidence = confidence
 
         if self.classification:
             self.sigmoid = nn.Sigmoid()
@@ -46,11 +48,16 @@ class MoleculeModel(nn.Module):
         dropout = nn.Dropout(args.dropout)
         activation = get_activation_function(args.activation)
 
+        output_size = args.output_size
+
+        if self.confidence:
+            output_size *= 2
+
         # Create FFN layers
         if args.ffn_num_layers == 1:
             ffn = [
                 dropout,
-                nn.Linear(first_linear_dim, args.output_size)
+                nn.Linear(first_linear_dim, output_size)
             ]
         else:
             ffn = [
@@ -73,7 +80,7 @@ class MoleculeModel(nn.Module):
             ffn.extend([
                 activation,
                 dropout,
-                nn.Linear(args.last_hidden_size, args.output_size),
+                nn.Linear(args.last_hidden_size, output_size),
             ])
 
         # Create FFN model
@@ -107,7 +114,12 @@ def build_model(args: Namespace) -> nn.Module:
     output_size = args.num_tasks
     args.output_size = output_size
 
-    model = MoleculeModel(classification=args.dataset_type == 'classification')
+    is_classifier = args.dataset_type == 'classification'
+    if args.confidence == 'nn':
+        print(args.confidence)
+        model = MoleculeModel(classification=is_classifier, confidence=True)
+    else:
+        model = MoleculeModel(classification=is_classifier)
     model.create_encoder(args)
     model.create_ffn(args)
 

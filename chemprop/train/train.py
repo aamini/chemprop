@@ -70,7 +70,14 @@ def train(model: nn.Module,
         model.zero_grad()
         preds = model(batch, features_batch)
 
-        loss = loss_func(preds, targets) * class_weights * mask
+        if model.confidence:
+            pred_targets = preds[:, [j for j in range(len(preds[0])) if j % 2 == 0]]
+            pred_sigma = preds[:, [j for j in range(len(preds[0])) if j % 2 == 1]]
+            sigma = ((pred_targets - targets) ** 2).detach()
+            loss = loss_func(pred_targets, targets) * class_weights * mask
+            loss += nn.MSELoss(reduction='none')(pred_sigma, sigma) * class_weights * mask
+        else:
+            loss = loss_func(preds, targets) * class_weights * mask
         loss = loss.sum() / mask.sum()
 
         loss_sum += loss.item()
