@@ -7,6 +7,7 @@ from tqdm import tqdm
 
 from chemprop.data.utils import get_smiles
 from chemprop.features import get_features_generator
+from standardize_smiles import standardize_smiles
 
 
 def add_tanimoto_sim_to_smiles_set(data_path: str,
@@ -21,9 +22,13 @@ def add_tanimoto_sim_to_smiles_set(data_path: str,
     print('Load smiles')
     smiles = list(set(get_smiles(smiles_path, header=header)))
 
+    print('Standardizing smiles')
+    data_smiles = [standardize_smiles(row['smiles']) for row in tqdm(data, total=len(data))]
+    smiles = [standardize_smiles(smile) for smile in tqdm(smiles, total=len(smiles))]
+
     print('Computing morgan fingerprints')
     morgan_fingerprint = get_features_generator('morgan')
-    data_morgans = np.array([morgan_fingerprint(row['smiles']) for row in tqdm(data, total=len(data))])
+    data_morgans = np.array([morgan_fingerprint(smile) for smile in tqdm(data_smiles, total=len(data))])
     smiles_morgans = np.array([morgan_fingerprint(smile) for smile in tqdm(smiles, total=len(smiles))])
     sims = 1 - cdist(data_morgans, smiles_morgans, metric='jaccard')
     max_sim_indices = np.argmax(sims, axis=1)
