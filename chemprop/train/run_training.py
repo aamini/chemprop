@@ -25,7 +25,7 @@ from .predict import predict
 from .train import train
 from chemprop.data import StandardScaler
 from chemprop.data.utils import get_class_sizes, get_data, get_task_names, split_data
-from chemprop.models import build_model
+from chemprop.models import build_model, train_residual_model
 from chemprop.nn_utils import param_count
 from chemprop.utils import build_optimizer, build_lr_scheduler, get_loss_func, get_metric_func, load_checkpoint,\
     makedirs, save_checkpoint
@@ -177,7 +177,7 @@ def run_training(args: Namespace, logger: Logger = None) -> List[float]:
     all_test_preds = np.zeros(
         (len(test_smiles), args.num_tasks, args.ensemble_size))
 
-    if args.confidence in ['gaussian', 'random_forest', 'conformal']:
+    if args.confidence in ['gaussian', 'random_forest', 'conformal', 'boost']:
         sum_last_hidden = np.zeros(
             (len(val_data.smiles()), args.last_hidden_size))
         sum_last_hidden_test = np.zeros(
@@ -307,7 +307,7 @@ def run_training(args: Namespace, logger: Logger = None) -> List[float]:
                 sum_test_confidence += np.array(test_confidence)
             all_test_preds[:, :, model_idx] = np.array(test_preds)
 
-        if args.confidence in ['gaussian', 'random_forest', 'conformal']:
+        if args.confidence in ['gaussian', 'random_forest', 'conformal', 'boost']:
             model.eval()
             model.use_last_hidden = False
 
@@ -345,7 +345,7 @@ def run_training(args: Namespace, logger: Logger = None) -> List[float]:
     # Evaluate ensemble on test set
     avg_test_preds = (sum_test_preds / args.ensemble_size)
 
-    if args.confidence in ['gaussian', 'random_forest', 'conformal']:
+    if args.confidence in ['gaussian', 'random_forest', 'conformal', 'boost']:
         avg_last_hidden = sum_last_hidden / args.ensemble_size
         avg_last_hidden_test = sum_last_hidden_test / args.ensemble_size
 
@@ -425,16 +425,7 @@ def run_training(args: Namespace, logger: Logger = None) -> List[float]:
 
             train_smiles_sfp = [morgan_fingerprint(s) for s in train_smiles]
             for i in range(len(test_smiles)):
-                smiles = Chem.MolToSmiles(Chem.MolFromSmiles(test_smiles[i]))
-                fp = morgan_fingerprint(smiles)
-                morgan_sim = []
-                for sfp in train_smiles_sfp:
-                    tsim = np.dot(fp, sfp) / (fp.sum() +
-                                              sfp.sum() - np.dot(fp, sfp))
-                    morgan_sim.append(
-                        (tsim, np.abs(avg_test_preds[i] - test_targets[i][0])))
-                morgan_sim, error = max(morgan_sim, key=lambda x: x[0])
-                confidence[i, :] = np.ones((args.num_tasks)) * morgan_sim
+                confidence[i, :] = np.ones((args.num_tasks)) * max_tanimoto(test_smiles[i])
         elif args.confidence == 'ensemble':
             predictions = avg_test_preds
             confidence = np.var(all_test_preds, axis=2) * -1
@@ -481,7 +472,6 @@ def run_training(args: Namespace, logger: Logger = None) -> List[float]:
                 forest = RandomForestClassifier(n_estimators=n_trees)
 
                 mask = val_targets[:, task] != None
-                print(val_targets[mask, task], avg_last_hidden[mask, :])
                 forest.fit(avg_last_hidden[mask, :], val_targets[mask, task])
 
                 avg_test_preds = forest.predict(avg_last_hidden_test)
@@ -511,6 +501,35 @@ def run_training(args: Namespace, logger: Logger = None) -> List[float]:
 
                     non_null = non_conformity[non_conformity != None]
                     confidence[i, task] = np.sum(non_null >= alpha) / len(non_null)
+        elif args.confidence == 'boost':        
+            # Calculate Tanimoto Distances
+            val_smiles = val_data.smiles()
+            val_tanimotos = np.ndarray(shape=(len(val_smiles), 1))
+            test_tanimotos = np.ndarray(shape=(len(test_smiles), 1))
+
+            train_smiles_sfp = [morgan_fingerprint(s) for s in train_data.smiles()]
+            for i in range(len(val_smiles)):
+                val_tanimotos[i, 0] = max_tanimoto(val_smiles[i], train_smiles_sfp)
+            for i in range(len(test_smiles)):
+                test_tanimotos[i, 0] = max_tanimoto(test_smiles[i], train_smiles_sfp)
+            
+            model.use_last_hidden = True
+            original_preds = predict(
+                model=model,
+                data=val_data,
+                batch_size=args.batch_size,
+                scaler=None
+            )
+            # Create and Train New Model
+            new_model = train_residual_model(np.concatenate((original_preds, val_tanimotos), axis=1),
+                                             original_preds,
+                                             val_data.targets(),
+                                             args.epochs)
+            
+            predictions = new_model(np.concatenate((avg_test_preds, test_tanimotos), axis=1), 
+                                    avg_test_preds).detach().numpy()
+            confidence = predictions
+            
 
     if args.confidence:
         accuracy_log = {}
@@ -542,6 +561,15 @@ def run_training(args: Namespace, logger: Logger = None) -> List[float]:
 
     return ensemble_scores
 
+def max_tanimoto(smile, train_smiles_sfp):
+    smiles = Chem.MolToSmiles(Chem.MolFromSmiles(smile))
+    fp = morgan_fingerprint(smiles)
+    morgan_sim = []
+    for sfp in train_smiles_sfp:
+        tsim = np.dot(fp, sfp) / (fp.sum() +
+                                    sfp.sum() - np.dot(fp, sfp))
+        morgan_sim.append(tsim)
+    return max(morgan_sim)
 
 def confidence_visualizations(args: Namespace,
                               predictions: List[Union[float, int]] = [],
