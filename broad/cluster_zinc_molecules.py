@@ -168,13 +168,13 @@ def cluster_zinc_molecules(data_path: str,
             writer.writeheader()
             writer.writerows(cluster_data)
 
-    print('Running T-SNE')
-    tsne = TSNE(n_components=2, init='pca', random_state=0)
+    print('Running t-SNE')
+    tsne = TSNE(n_components=2, init='pca', random_state=0, metric='jaccard')
     X = tsne.fit_transform(morgans)
 
-    print('Plotting K-Means/T-SNE')
+    print('Plotting K-Means/t-SNE')
     smiles = [datapoint['smiles'] for datapoint in data]
-    for display_type in ['points']:  # ['points', 'random', 'center', 'top']:
+    for display_type in ['points', 'random', 'center', 'top']:
         plot_kmeans_with_tsne(
             X=X,
             smiles=smiles,
