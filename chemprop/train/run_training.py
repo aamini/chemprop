@@ -367,6 +367,7 @@ def run_training(args: Namespace, logger: Logger = None) -> List[float]:
     writer.add_scalar(
         f'ensemble_test_{args.metric}', avg_ensemble_test_score, 0)
 
+    targets = np.array(test_targets)
     if args.confidence and args.dataset_type == 'regression':
         if args.confidence == 'gaussian':
             # TODO: Scale confidence to reflect scaled predictions.
@@ -425,7 +426,7 @@ def run_training(args: Namespace, logger: Logger = None) -> List[float]:
 
             train_smiles_sfp = [morgan_fingerprint(s) for s in train_smiles]
             for i in range(len(test_smiles)):
-                confidence[i, :] = np.ones((args.num_tasks)) * max_tanimoto(test_smiles[i])
+                confidence[i, :] = np.ones((args.num_tasks)) * tanimoto(test_smiles[i], lambda x: max(x))
         elif args.confidence == 'ensemble':
             predictions = avg_test_preds
             confidence = np.var(all_test_preds, axis=2) * -1
@@ -504,14 +505,31 @@ def run_training(args: Namespace, logger: Logger = None) -> List[float]:
         elif args.confidence == 'boost':        
             # Calculate Tanimoto Distances
             val_smiles = val_data.smiles()
-            val_tanimotos = np.ndarray(shape=(len(val_smiles), 1))
-            test_tanimotos = np.ndarray(shape=(len(test_smiles), 1))
+            val_max_tanimotos = np.ndarray(shape=(len(val_smiles), 1))
+            val_avg_tanimotos = np.ndarray(shape=(len(val_smiles), 1))
+            val_new_substructs = np.ndarray(shape=(len(val_smiles), 1))
+            test_max_tanimotos = np.ndarray(shape=(len(test_smiles), 1))
+            test_avg_tanimotos = np.ndarray(shape=(len(test_smiles), 1))
+            test_new_substructs = np.ndarray(shape=(len(test_smiles), 1))
 
             train_smiles_sfp = [morgan_fingerprint(s) for s in train_data.smiles()]
+            train_smiles_union = [1 if 1 in [train_smiles_sfp[i][j] for i in range(len(train_smiles_sfp))] else 0 for j in range(len(train_smiles_sfp[0]))]
             for i in range(len(val_smiles)):
-                val_tanimotos[i, 0] = max_tanimoto(val_smiles[i], train_smiles_sfp)
+                temp_tanimotos = tanimoto(val_smiles[i], train_smiles_sfp, lambda x: x)
+                val_max_tanimotos[i, 0] = max(temp_tanimotos)
+                val_avg_tanimotos[i, 0] = sum(temp_tanimotos)/len(temp_tanimotos)
+
+                smiles = Chem.MolToSmiles(Chem.MolFromSmiles(val_smiles[i]))
+                fp = morgan_fingerprint(smiles)
+                val_new_substructs[i, 0] = sum([1 if fp[i] and not train_smiles_union[i] else 0 for i in range(len(fp))])
             for i in range(len(test_smiles)):
-                test_tanimotos[i, 0] = max_tanimoto(test_smiles[i], train_smiles_sfp)
+                temp_tanimotos = tanimoto(test_smiles[i], train_smiles_sfp, lambda x: x)
+                test_max_tanimotos[i, 0] = max(temp_tanimotos)
+                test_avg_tanimotos[i, 0] = sum(temp_tanimotos)/len(temp_tanimotos)
+
+                smiles = Chem.MolToSmiles(Chem.MolFromSmiles(test_smiles[i]))
+                fp = morgan_fingerprint(smiles)
+                test_new_substructs[i, 0] = sum([1 if fp[i] and not train_smiles_union[i] else 0 for i in range(len(fp))])
             
             model.use_last_hidden = True
             original_preds = predict(
@@ -521,14 +539,21 @@ def run_training(args: Namespace, logger: Logger = None) -> List[float]:
                 scaler=None
             )
             # Create and Train New Model
-            new_model = train_residual_model(np.concatenate((original_preds, val_tanimotos), axis=1),
+            features = (original_preds, val_max_tanimotos, val_avg_tanimotos, val_new_substructs)
+            new_model = train_residual_model(np.concatenate(features, axis=1),
                                              original_preds,
                                              val_data.targets(),
                                              args.epochs)
-            
-            predictions = new_model(np.concatenate((avg_test_preds, test_tanimotos), axis=1), 
-                                    avg_test_preds).detach().numpy()
-            confidence = predictions
+
+            features = (avg_test_preds, test_max_tanimotos, test_avg_tanimotos, test_new_substructs)
+            # confidence = new_model(np.concatenate(features, axis=1), 
+                                    # avg_test_preds).detach().numpy()
+            predictions = avg_test_preds
+            confidence = np.abs(avg_test_preds - 0.5)
+            # print(targets)
+            # targets = np.extract(correctness > avg_correctness, targets).reshape((-1, args.num_tasks))
+            # print(targets)
+            # targets = (np.abs(avg_test_preds - targets) < 0.5) * 1
             
 
     if args.confidence:
@@ -536,7 +561,6 @@ def run_training(args: Namespace, logger: Logger = None) -> List[float]:
         if args.save_confidence:
             f = open(args.save_confidence, 'w+')
 
-        targets = np.array(test_targets)
         for task in range(args.num_tasks):
             accuracy_sublog = []
             
@@ -561,7 +585,7 @@ def run_training(args: Namespace, logger: Logger = None) -> List[float]:
 
     return ensemble_scores
 
-def max_tanimoto(smile, train_smiles_sfp):
+def tanimoto(smile, train_smiles_sfp, operation):
     smiles = Chem.MolToSmiles(Chem.MolFromSmiles(smile))
     fp = morgan_fingerprint(smiles)
     morgan_sim = []
@@ -569,7 +593,7 @@ def max_tanimoto(smile, train_smiles_sfp):
         tsim = np.dot(fp, sfp) / (fp.sum() +
                                     sfp.sum() - np.dot(fp, sfp))
         morgan_sim.append(tsim)
-    return max(morgan_sim)
+    return operation(morgan_sim)
 
 def confidence_visualizations(args: Namespace,
                               predictions: List[Union[float, int]] = [],
