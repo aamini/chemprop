@@ -14,12 +14,17 @@ from chemprop.features import get_features_generator
 from chemprop.utils import makedirs
 
 
+su3327_smiles = 'Nc1nnc(Sc2ncc(s2)[N+]([O-])=O)s1'
+
+
 def compare_datasets_tsne(smiles_path_1: str, smiles_path_2: str, save_path: str):
     # Load the two smiles datasets
     print('Loading data')
     smiles_1, smiles_2 = get_smiles(smiles_path_1), get_smiles(smiles_path_2)
     smiles = smiles_1 + smiles_2
     colors = ['blue'] * len(smiles_1) + ['red'] * len(smiles_2)
+
+    su3327_index = smiles.index(su3327_smiles)
 
     # Compute Morgan fingerprints
     print('Computing Morgan fingerprints')
@@ -35,10 +40,12 @@ def compare_datasets_tsne(smiles_path_1: str, smiles_path_2: str, save_path: str
     X = (X - x_min) / (x_max - x_min)
 
     plt.figure(figsize=(6.4 * 10, 4.8 * 10))
-    ax = plt.subplot(111)
 
-    for x, color in zip(X, colors):
-        plt.plot(x[0], x[1], marker='o', markersize=10, color=color)
+    for i, (x, color) in enumerate(zip(X, colors)):
+        if i == su3327_indexc:
+            plt.plot(x[0], x[1], marker='*', markersize=80, color='green')
+        else:
+            plt.plot(x[0], x[1], marker='o', markersize=10, color=color)
 
     plt.xticks([]), plt.yticks([])
 
