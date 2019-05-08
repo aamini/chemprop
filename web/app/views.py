@@ -13,6 +13,7 @@ import multiprocessing as mp
 import zipfile
 
 from flask import json, jsonify, redirect, render_template, request, send_file, send_from_directory, url_for
+from flask_restful import Resource, reqparse
 import numpy as np
 from rdkit import Chem
 from werkzeug.utils import secure_filename
@@ -135,34 +136,49 @@ def format_float_list(array: List[float], precision: int = 4) -> List[str]:
     """
     return [format_float(f, precision) for f in array]
 
-@app.route('/receiver', methods=['POST'])
-@check_not_demo
-def receiver():
-    """Receiver monitoring the progress of training."""
-    return jsonify(progress=PROGRESS.value, training=TRAINING)
 
-
-@app.route('/')
-def home():
-    """Renders the home page."""
-    return render_template('home.html', users=db.get_all_users())
-
-@app.route('/create_user', methods=['GET', 'POST'])
-@check_not_demo
-def create_user():
-    """    
-    If a POST request is made, creates a new user.
-    Renders the create_user page.
+def render_error(status: int, message: str):
     """
-    if request.method == 'GET':   
-        return render_template('create_user.html', users=db.get_all_users())
+    :param status The error code.
+    :param message A helpful message to explain the error.
+    """
+    return {"status": status, "message": message}
 
-    new_name = request.form['newUserName']
 
-    if new_name != None:
-        db.insert_user(new_name)
+# @app.route('/receiver', methods=['POST'])
+# @check_not_demo
+# def receiver():
+#     """Receiver monitoring the progress of training."""
+#     return jsonify(progress=PROGRESS.value, training=TRAINING)
 
-    return redirect(url_for('create_user'))
+parser = reqparse.RequestParser()
+parser.add_argument('user_name', type=str, help='The name of the user to be added.')
+
+class Users(Resource):
+    def get(self):
+        return db.get_all_users()
+    
+    def post(self):
+        args = parser.parse_args(strict=True)
+
+        if not args.user_name:
+            return render_error(400, "Must specify a user_name.")
+
+        new_user = db.insert_user(args.user_name)
+        return new_user, 201
+
+
+class User(Resource):
+    def get(self, user_id):
+        if not str.isdigit(user_id):
+            return render_error(400, "user_id should be an integer.")
+        
+        user = db.get_user(int(user_id))
+        if not user:
+            return render_error(404, "User not found.")
+
+        return user
+
 
 def render_train(**kwargs):
     """Renders the train page with specified kwargs."""

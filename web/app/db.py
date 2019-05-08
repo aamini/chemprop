@@ -74,18 +74,33 @@ def close_db(e: Optional[Any] = None):
 
 
 # Table Specific Functions
-def get_all_users() -> Dict[int, Dict[str, Any]]:
+def get_all_users() -> List[Dict[str, Any]]:
     """
     Returns all users.
 
-    :return A dictionary of users with their ids as keys.
+    :return A list of users.
     """
     rows = query_db("SELECT * FROM user")
 
-    return {row['id']: {"username": row['username'], "preferences": row['preferences']} for row in rows} if rows else {}
+    return [{"id": int(row['id']), "username": row['username']} for row in rows] if rows else []
 
 
-def insert_user(username: str) -> Tuple[int, str]:
+def get_user(user_id) -> Dict[str, Any]:
+    """
+    Returns a specific user.
+
+    :user_id The id of the user to be returned.
+    :return A dict representing the desired user.
+    """
+    row = query_db("SELECT * FROM user WHERE id=(?)", [user_id], one = True)
+
+    if not row:
+        return None
+
+    return {"id": int(row['id']), "username": row['username']}
+
+
+def insert_user(username: str) -> Dict[str, Any]:
     """
     Inserts a new user. If the desired username is already taken,  
     appends integers incrementally until an open name is found.
@@ -111,7 +126,7 @@ def insert_user(username: str) -> Tuple[int, str]:
     db.commit()
     cur.close()
 
-    return new_user_id, temp_name
+    return {"id": new_user_id, "username": temp_name}
 
 
 def get_ckpts(user_id: int) -> List[sqlite3.Row]:
