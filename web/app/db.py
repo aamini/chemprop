@@ -92,7 +92,7 @@ def get_user(user_id) -> Dict[str, Any]:
     :user_id The id of the user to be returned.
     :return A dict representing the desired user.
     """
-    row = query_db("SELECT * FROM user WHERE id=(?)", [user_id], one = True)
+    row = query_db(f'SELECT * FROM user WHERE id = {user_id}', one = True)
 
     if not row:
         return None
@@ -127,6 +127,25 @@ def insert_user(username: str) -> Dict[str, Any]:
     cur.close()
 
     return {"id": new_user_id, "username": temp_name}
+
+
+def delete_user(user_id: int):
+    """
+    Removes the user with the specified id from the database,
+    associated checkpoints, and the corresponding files.
+
+    :param user_id: The id of the user to be deleted.
+    """
+    ids = query_db(f'SELECT id FROM model WHERE associated_ckpt = {user_id}')
+
+    for id_ in ids:
+        delete_ckpt(id_)
+
+    db = get_db()
+    cur = db.cursor()
+    db.execute(f'DELETE FROM user WHERE id = {user_id}')
+    db.commit()
+    cur.close()
 
 
 def get_ckpts(user_id: int) -> List[sqlite3.Row]:

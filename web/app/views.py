@@ -178,6 +178,10 @@ class User(Resource):
             return render_error(404, "User not found.")
 
         return user
+    
+    def delete(self, user_id):
+        db.delete_user(user_id)
+        return {}, 204
 
 
 def render_train(**kwargs):
