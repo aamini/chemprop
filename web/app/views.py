@@ -152,7 +152,8 @@ def render_error(status: int, message: str):
 #     return jsonify(progress=PROGRESS.value, training=TRAINING)
 
 parser = reqparse.RequestParser()
-parser.add_argument('user_name', type=str, help='The name of the user to be added.')
+parser.add_argument('userId', type=int, help='The id of the user.')
+parser.add_argument('userName', type=str, help='The name of the user.')
 
 class Users(Resource):
     def get(self):
@@ -161,26 +162,105 @@ class Users(Resource):
     def post(self):
         args = parser.parse_args(strict=True)
 
-        if not args.user_name:
-            return render_error(400, "Must specify a user_name.")
+        if not args.userName:
+            return render_error(400, "Must specify a userName.")
 
-        new_user = db.insert_user(args.user_name)
+        new_user = db.insert_user(args.userName)
         return new_user, 201
 
 
 class User(Resource):
     def get(self, user_id):
         if not str.isdigit(user_id):
-            return render_error(400, "user_id should be an integer.")
+            return render_error(400, "userId should be an integer.")
         
         user = db.get_user(int(user_id))
         if not user:
-            return render_error(404, "User not found.")
+            return render_error(404, "User with specified userId not found.")
 
         return user
     
     def delete(self, user_id):
+        if not str.isdigit(user_id):
+            return render_error(400, "userId should be an integer.")
+
         db.delete_user(user_id)
+        return {}, 204
+
+
+class Data(Resource):
+    def get(self):
+        args = parser.parse_args(strict=True)
+
+        if not args.userId:
+            return render_error(400, "Must specify a userId.")
+        
+        return db.get_datasets(args.userId)
+    
+    def post(self):
+        args = parser.parse_args(strict=True)
+
+        if not args.userId:
+            return render_error(400, "Must specify a userId.")
+
+        warnings, errors = [], []
+
+        dataset = request.files['dataset']
+
+        with NamedTemporaryFile() as temp_file:
+            dataset.save(temp_file.name)
+            dataset_errors = validate_data(temp_file.name)
+
+            if len(dataset_errors) > 0:
+                errors.extend(dataset_errors)
+            else:
+                dataset_name = request.form['datasetName']
+                # dataset_class = load_args(ckpt).dataset_type  # TODO: SWITCH TO ACTUALLY FINDING THE CLASS
+
+                dataset_id, new_dataset_name = db.insert_dataset(dataset_name, args.userId, 'UNKNOWN')
+
+                dataset_path = os.path.join(app.config['DATA_FOLDER'], f'{dataset_id}.csv')
+
+                if dataset_name != new_dataset_name:
+                    warnings.append(name_already_exists_message('Data', dataset_name, new_dataset_name))
+
+                shutil.copy(temp_file.name, dataset_path)
+
+        warnings, errors = json.dumps(warnings), json.dumps(errors)
+        
+        if len(errors) != 0:
+            return render_error(415, errors), 415
+
+        return {'id': dataset_id, 'name': new_dataset_name, 'warnings': warnings}
+
+
+class DataSet(Resource):
+    def get(self, dataset_id):
+        """
+        Downloads a dataset as a .csv file.
+
+        :param dataset: The id of the dataset to download.
+        """
+        if not str.isdigit(dataset_id):
+            return render_error(400, "dataId should be an integer.")
+
+        dataset = send_from_directory(app.config['DATA_FOLDER'], f'{dataset_id}.csv', as_attachment=True, cache_timeout=-1)
+
+        if not dataset:
+            return render_error(404, 'Data with specified dataId not found.'), 404
+        return dataset
+    
+    def delete(self, dataset_id):
+        """
+        Deletes a dataset.
+
+        :param dataset: The id of the dataset to delete.
+        """
+        if not str.isdigit(dataset_id):
+            return render_error(400, "dataId should be an integer.")
+
+        db.delete_dataset(dataset_id)
+        os.remove(os.path.join(app.config['DATA_FOLDER'], f'{dataset_id}.csv'))
         return {}, 204
 
 
@@ -390,85 +470,6 @@ def predict():
 def download_predictions():
     """Downloads predictions as a .csv file."""
     return send_from_directory(app.config['TEMP_FOLDER'], app.config['PREDICTIONS_FILENAME'], as_attachment=True, cache_timeout=-1)
-
-
-@app.route('/data')
-@check_not_demo
-def data():
-    """Renders the data page."""
-    data_upload_warnings, data_upload_errors = get_upload_warnings_errors('data')
-
-    return render_template('data.html',
-                           datasets=db.get_datasets(request.cookies.get('currentUser')),
-                           data_upload_warnings=data_upload_warnings,
-                           data_upload_errors=data_upload_errors,
-                           users=db.get_all_users())
-
-
-@app.route('/data/upload/<string:return_page>', methods=['POST'])
-@check_not_demo
-def upload_data(return_page: str):
-    """
-    Uploads a data .csv file.
-
-    :param return_page: The name of the page to render to after uploading the dataset.
-    """
-    warnings, errors = [], []
-
-    current_user = request.cookies.get('currentUser')
-
-    if not current_user:
-        # Use DEFAULT as current user if the client's cookie is not set.
-        current_user = app.config['DEFAULT_USER_ID']
-
-    dataset = request.files['dataset']
-
-    with NamedTemporaryFile() as temp_file:
-        dataset.save(temp_file.name)
-        dataset_errors = validate_data(temp_file.name)
-
-        if len(dataset_errors) > 0:
-            errors.extend(dataset_errors)
-        else:
-            dataset_name = request.form['datasetName']
-            # dataset_class = load_args(ckpt).dataset_type  # TODO: SWITCH TO ACTUALLY FINDING THE CLASS
-
-            dataset_id, new_dataset_name = db.insert_dataset(dataset_name, current_user, 'UNKNOWN')
-
-            dataset_path = os.path.join(app.config['DATA_FOLDER'], f'{dataset_id}.csv')
-
-            if dataset_name != new_dataset_name:
-                warnings.append(name_already_exists_message('Data', dataset_name, new_dataset_name))
-
-            shutil.copy(temp_file.name, dataset_path)
-
-    warnings, errors = json.dumps(warnings), json.dumps(errors)
-
-    return redirect(url_for(return_page, data_upload_warnings=warnings, data_upload_errors=errors))
-
-
-@app.route('/data/download/<int:dataset>')
-@check_not_demo
-def download_data(dataset: int):
-    """
-    Downloads a dataset as a .csv file.
-
-    :param dataset: The id of the dataset to download.
-    """
-    return send_from_directory(app.config['DATA_FOLDER'], f'{dataset}.csv', as_attachment=True, cache_timeout=-1)
-
-
-@app.route('/data/delete/<int:dataset>')
-@check_not_demo
-def delete_data(dataset: int):
-    """
-    Deletes a dataset.
-
-    :param dataset: The id of the dataset to delete.
-    """
-    db.delete_dataset(dataset)
-    os.remove(os.path.join(app.config['DATA_FOLDER'], f'{dataset}.csv'))
-    return redirect(url_for('data'))
 
 
 @app.route('/checkpoints')

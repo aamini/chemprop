@@ -106,7 +106,7 @@ def insert_user(username: str) -> Dict[str, Any]:
     appends integers incrementally until an open name is found.
 
     :param username: The desired username for the new user.
-    :return A tuple containing the id and name of the new user.
+    :return A dictionary containing the id and name of the new user.
     """
     db = get_db()
 
@@ -126,7 +126,7 @@ def insert_user(username: str) -> Dict[str, Any]:
     db.commit()
     cur.close()
 
-    return {"id": new_user_id, "username": temp_name}
+    return {"userId": new_user_id, "userName": temp_name}
 
 
 def delete_user(user_id: int):
