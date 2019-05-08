@@ -74,33 +74,26 @@ def close_db(e: Optional[Any] = None):
 
 
 # Table Specific Functions
-def get_all_users() -> List[Dict[str, Any]]:
+def get_users() -> List[sqlite3.Row]:
     """
     Returns all users.
 
     :return A list of users.
     """
-    rows = query_db("SELECT * FROM user")
-
-    return [{"id": int(row['id']), "username": row['username']} for row in rows] if rows else []
+    return query_db("SELECT * FROM user")
 
 
-def get_user(user_id) -> Dict[str, Any]:
+def get_user(user_id) -> sqlite3.Row:
     """
     Returns a specific user.
 
     :user_id The id of the user to be returned.
     :return A dict representing the desired user.
     """
-    row = query_db(f'SELECT * FROM user WHERE id = {user_id}', one = True)
-
-    if not row:
-        return None
-
-    return {"id": int(row['id']), "username": row['username']}
+    return query_db(f'SELECT * FROM user WHERE id = {user_id}', one = True)
 
 
-def insert_user(username: str) -> Dict[str, Any]:
+def insert_user(user_name: str) -> sqlite3.Row:
     """
     Inserts a new user. If the desired username is already taken,  
     appends integers incrementally until an open name is found.
@@ -113,12 +106,12 @@ def insert_user(username: str) -> Dict[str, Any]:
     new_user_id = None
     count = 0
     while new_user_id is None:
-        temp_name = username
+        temp_name = user_name
         
         if count != 0:
             temp_name += str(count)
         try:
-            cur = db.execute('INSERT INTO user (username) VALUES (?)', [temp_name])
+            cur = db.execute('INSERT INTO user (userName) VALUES (?)', [temp_name])
             new_user_id = cur.lastrowid
         except sqlite3.IntegrityError:
             count += 1
@@ -126,7 +119,7 @@ def insert_user(username: str) -> Dict[str, Any]:
     db.commit()
     cur.close()
 
-    return {"userId": new_user_id, "userName": temp_name}
+    return get_user(new_user_id)
 
 
 def delete_user(user_id: int):
@@ -136,7 +129,7 @@ def delete_user(user_id: int):
 
     :param user_id: The id of the user to be deleted.
     """
-    ids = query_db(f'SELECT id FROM model WHERE associated_ckpt = {user_id}')
+    ids = query_db(f'SELECT id FROM ckpt WHERE userId = {user_id}')
 
     for id_ in ids:
         delete_ckpt(id_)
@@ -158,23 +151,33 @@ def get_ckpts(user_id: int) -> List[sqlite3.Row]:
     :return A list of checkpoints.
     """
     if not user_id:
-        user_id = app.config['DEFAULT_USER_ID']
+        return query_db(f'SELECT * FROM ckpt')
+ 
+    return query_db(f'SELECT * FROM ckpt WHERE userId = {user_id}')
 
-    return query_db(f'SELECT * FROM ckpt WHERE associated_user = {user_id}')
+
+def get_ckpt(ckpt_id) -> sqlite3.Row:
+    """
+    Returns a specific ckpt.
+
+    :user_id The id of the ckpt to be returned.
+    :return A dict representing the desired ckpt.
+    """
+    return query_db(f'SELECT * FROM ckpt WHERE id = {ckpt_id}', one = True)
 
 
 def insert_ckpt(ckpt_name: str, 
-                associated_user: str, 
+                user_id: str, 
                 model_class: str, 
                 num_epochs: int,
                 ensemble_size: int,
-                training_size: int) -> Tuple[int, str]:
+                training_size: int) -> sqlite3.Row:
     """
     Inserts a new checkpoint. If the desired name is already taken,  
     appends integers incrementally until an open name is found.   
 
     :param ckpt_name: The desired name for the new checkpoint.
-    :param associated_user: The user that should be associated with the new checkpoint.
+    :param user_id: The user that should be associated with the new checkpoint.
     :param model_class: The class of the new checkpoint.
     :param num_epochs: The number of epochs the new checkpoint will run for.
     :param ensemble_size: The number of models included in the ensemble.
@@ -192,9 +195,9 @@ def insert_ckpt(ckpt_name: str,
             temp_name += str(count)
         try:
             cur = db.execute('INSERT INTO ckpt '
-                             '(ckpt_name, associated_user, class, epochs, ensemble_size, training_size) '
+                             '(ckptName, userId, class, epochs, ensembleSize, trainingSize) '
                              'VALUES (?, ?, ?, ?, ?, ?)',
-                             [temp_name, associated_user, model_class, num_epochs, ensemble_size, training_size])
+                             [temp_name, user_id, model_class, num_epochs, ensemble_size, training_size])
             new_ckpt_id = cur.lastrowid
         except sqlite3.IntegrityError as e:
             count += 1
@@ -203,7 +206,7 @@ def insert_ckpt(ckpt_name: str,
     db.commit()
     cur.close()
 
-    return new_ckpt_id, temp_name
+    return get_ckpt(new_ckpt_id)
 
 
 def delete_ckpt(ckpt_id: int):
@@ -213,7 +216,7 @@ def delete_ckpt(ckpt_id: int):
 
     :param ckpt_id: The id of the checkpoint to be deleted.
     """
-    rows = query_db(f'SELECT * FROM model WHERE associated_ckpt = {ckpt_id}')
+    rows = query_db(f'SELECT * FROM model WHERE ckptId = {ckpt_id}')
 
     for row in rows:
         os.remove(os.path.join(app.config['CHECKPOINT_FOLDER'], f'{row["id"]}.pt'))
@@ -221,9 +224,10 @@ def delete_ckpt(ckpt_id: int):
     db = get_db()
     cur = db.cursor()
     db.execute(f'DELETE FROM ckpt WHERE id = {ckpt_id}')
-    db.execute(f'DELETE FROM model WHERE associated_ckpt = {ckpt_id}')
+    db.execute(f'DELETE FROM model WHERE ckptId = {ckpt_id}')
     db.commit()
     cur.close()
+
 
 def get_models(ckpt_id: int) -> List[sqlite3.Row]:
     """
@@ -232,7 +236,21 @@ def get_models(ckpt_id: int) -> List[sqlite3.Row]:
     :param ckpt_id: The id of the ckpt whose component models are returned.
     :return A list of models.
     """
-    return query_db(f'SELECT * FROM model WHERE associated_ckpt = {ckpt_id}')
+    if not ckpt_id:
+        return query_db('SELECT * FROM model')
+
+    return query_db(f'SELECT * FROM model WHERE ckptId = {ckpt_id}')
+
+
+def get_model(model_id: int) -> sqlite3.Row:
+    """
+    Returns a specific model.
+
+    :model_id The id of the model to be returned.
+    :return A dict representing the desired model.
+    """
+    return query_db(f'SELECT * FROM model WHERE id = {model_id}', one = True)
+
 
 def insert_model(ckpt_id: int) -> str:
     """
@@ -242,12 +260,13 @@ def insert_model(ckpt_id: int) -> str:
     :return: The id of the new model.
     """
     db = get_db()
-    cur = db.execute('INSERT INTO model (associated_ckpt) VALUES (?)', [ckpt_id])
+    cur = db.execute('INSERT INTO model (ckptId) VALUES (?)', [ckpt_id])
     new_model_id = cur.lastrowid
     db.commit()
     cur.close()
 
-    return new_model_id
+    return get_model(new_model_id)
+
 
 def get_datasets(user_id: int) -> List[sqlite3.Row]:
     """
@@ -259,14 +278,24 @@ def get_datasets(user_id: int) -> List[sqlite3.Row]:
     :return A list of datasets.
     """
     if not user_id:
-        user_id = app.config['DEFAULT_USER_ID']
+        return query_db('SELECT * FROM dataset')
 
-    return query_db(f'SELECT * FROM dataset WHERE associated_user = {user_id}')
+    return query_db(f'SELECT * FROM dataset WHERE userId = {user_id}')
+
+
+def get_dataset(dataset_id: int) -> sqlite3.Row:
+    """
+    Returns a specific dataset.
+
+    :dataset_id The id of the dataset to be returned.
+    :return A dict representing the desired dataset.
+    """
+    return query_db(f'SELECT * FROM dataset WHERE id = {dataset_id}', one = True)
 
 
 def insert_dataset(dataset_name: str, 
-                   associated_user: str, 
-                   dataset_class: str) -> Tuple[int, str]:
+                   user_id: str, 
+                   dataset_class: str) -> sqlite3.Row:
     """
     Inserts a new dataset. If the desired name is already taken,  
     appends integers incrementally until an open name is found.   
@@ -286,8 +315,8 @@ def insert_dataset(dataset_name: str,
         if count != 0:
             temp_name += str(count)
         try:
-            cur = db.execute('INSERT INTO dataset (dataset_name, associated_user, class) VALUES (?, ?, ?)',
-                             [temp_name, associated_user, dataset_class])
+            cur = db.execute('INSERT INTO dataset (datasetName, userId, class) VALUES (?, ?, ?)',
+                             [temp_name, user_id, dataset_class])
             new_dataset_id = cur.lastrowid
         except sqlite3.IntegrityError as e:
             count += 1
@@ -296,7 +325,7 @@ def insert_dataset(dataset_name: str,
     db.commit()
     cur.close()
 
-    return new_dataset_id, temp_name
+    return get_dataset(new_dataset_id)
 
 
 def delete_dataset(dataset_id: int):

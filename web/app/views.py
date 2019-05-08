@@ -155,11 +155,12 @@ def render_error(status: int, message: str):
 parser = reqparse.RequestParser()
 parser.add_argument('userId', type=int, help='The id of the user.')
 parser.add_argument('userName', type=str, help='The name of the user.')
+parser.add_argument('datasetName', type=str, help='The name of the dataset.')
 parser.add_argument('file', type=werkzeug.datastructures.FileStorage, location='files')
 
 class Users(Resource):
     def get(self):
-        return db.get_all_users()
+        return db.get_users()
     
     def post(self):
         args = parser.parse_args(strict=True)
@@ -190,12 +191,9 @@ class User(Resource):
         return {}, 204
 
 
-class Data(Resource):
+class Datasets(Resource):
     def get(self):
         args = parser.parse_args(strict=True)
-
-        if not args.userId:
-            return render_error(400, "Must specify a userId.")
         
         return db.get_datasets(args.userId)
     
@@ -204,6 +202,9 @@ class Data(Resource):
 
         if not args.userId:
             return render_error(400, "Must specify a userId.")
+        
+        if not args.datasetName:
+            return render_error(400, "Must specify a datasetName.")
 
         if not args.file:
             return render_error(400, "Must specify a file.")
@@ -222,12 +223,12 @@ class Data(Resource):
                 dataset_name = request.form['datasetName']
                 # dataset_class = load_args(ckpt).dataset_type  # TODO: SWITCH TO ACTUALLY FINDING THE CLASS
 
-                dataset_id, new_dataset_name = db.insert_dataset(dataset_name, args.userId, 'UNKNOWN')
+                new_dataset = db.insert_dataset(args.datasetName, args.userId, 'UNKNOWN')
 
                 dataset_path = os.path.join(app.config['DATA_FOLDER'], f'{dataset_id}.csv')
 
                 if dataset_name != new_dataset_name:
-                    warnings.append(name_already_exists_message('Data', dataset_name, new_dataset_name))
+                    warnings.append(name_already_exists_message('Data', args.datasetName, new_dataset_name))
 
                 shutil.copy(temp_file.name, dataset_path)
 
@@ -236,10 +237,11 @@ class Data(Resource):
         if len(errors) != 0:
             return render_error(415, errors), 415
 
-        return {'id': dataset_id, 'name': new_dataset_name, 'warnings': warnings}
+        new_dataset['warnings'] = warnings
+        return new_dataset
 
 
-class DataSet(Resource):
+class Dataset(Resource):
     def get(self, dataset_id):
         """
         Downloads a dataset as a .csv file.
@@ -247,12 +249,12 @@ class DataSet(Resource):
         :param dataset: The id of the dataset to download.
         """
         if not str.isdigit(dataset_id):
-            return render_error(400, "dataId should be an integer.")
+            return render_error(400, "datasetId should be an integer.")
 
         dataset = send_from_directory(app.config['DATA_FOLDER'], f'{dataset_id}.csv', as_attachment=True, cache_timeout=-1)
 
         if not dataset:
-            return render_error(404, 'Data with specified dataId not found.'), 404
+            return render_error(404, 'Dataset with specified datasetId not found.'), 404
         return dataset
     
     def delete(self, dataset_id):
@@ -262,7 +264,7 @@ class DataSet(Resource):
         :param dataset: The id of the dataset to delete.
         """
         if not str.isdigit(dataset_id):
-            return render_error(400, "dataId should be an integer.")
+            return render_error(400, "datasetId should be an integer.")
 
         db.delete_dataset(dataset_id)
         os.remove(os.path.join(app.config['DATA_FOLDER'], f'{dataset_id}.csv'))

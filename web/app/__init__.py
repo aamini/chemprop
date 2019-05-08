@@ -14,5 +14,5 @@ from app import views
 
 api.add_resource(views.Users, '/users')
 api.add_resource(views.User, '/users/<user_id>')
-api.add_resource(views.Data, '/data')
-api.add_resource(views.DataSet, '/data/<dataset_id>')
+api.add_resource(views.Datasets, '/datasets')
+api.add_resource(views.Dataset, '/datasets/<dataset_id>')
