@@ -10,6 +10,7 @@ from tempfile import TemporaryDirectory, NamedTemporaryFile
 import time
 from typing import Callable, List, Tuple
 import multiprocessing as mp
+import werkzeug
 import zipfile
 
 from flask import json, jsonify, redirect, render_template, request, send_file, send_from_directory, url_for
@@ -154,6 +155,7 @@ def render_error(status: int, message: str):
 parser = reqparse.RequestParser()
 parser.add_argument('userId', type=int, help='The id of the user.')
 parser.add_argument('userName', type=str, help='The name of the user.')
+parser.add_argument('file', type=werkzeug.datastructures.FileStorage, location='files')
 
 class Users(Resource):
     def get(self):
@@ -203,9 +205,12 @@ class Data(Resource):
         if not args.userId:
             return render_error(400, "Must specify a userId.")
 
+        if not args.file:
+            return render_error(400, "Must specify a file.")
+
         warnings, errors = [], []
 
-        dataset = request.files['dataset']
+        dataset = args['file']
 
         with NamedTemporaryFile() as temp_file:
             dataset.save(temp_file.name)
