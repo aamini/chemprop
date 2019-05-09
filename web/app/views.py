@@ -139,12 +139,20 @@ def format_float_list(array: List[float], precision: int = 4) -> List[str]:
     return [format_float(f, precision) for f in array]
 
 
-def row_to_json(row: sqlite3.Row):
-    return {key: row[key] for key in row.keys()}
+def row_to_json(row: sqlite3.Row, j: bool = True):
+    row_to_dict = {key: row[key] for key in row.keys()}
+
+    if j:
+        return jsonify(row_to_dict)
+    return row_to_dict
 
 
-def rows_to_json(rows: List[sqlite3.Row]):
-    return [row_to_json(row) for row in rows]
+def rows_to_json(rows: List[sqlite3.Row], j: bool = True):
+    rows_to_dicts = [row_to_json(row, j = False) for row in rows]
+
+    if j:
+        return jsonify(rows_to_dicts)
+    return rows_to_dicts
 
 
 def render_error(status: int, message: str):
@@ -152,7 +160,7 @@ def render_error(status: int, message: str):
     :param status The error code.
     :param message A helpful message to explain the error.
     """
-    return {"status": status, "message": message}
+    return {"status": status, "message": message}, status
 
 
 # @app.route('/receiver', methods=['POST'])
@@ -178,7 +186,9 @@ class Users(Resource):
             return render_error(400, "Must specify a userName.")
 
         new_user = db.insert_user(args.userName)
-        return row_to_json(new_user), 201
+        response = row_to_json(new_user)
+        response.status_code = 201
+        return response
 
 
 class User(Resource):
@@ -196,7 +206,10 @@ class User(Resource):
         if not str.isdigit(user_id):
             return render_error(400, "userId should be an integer.")
 
-        db.delete_user(user_id)
+        deleted = db.delete_user(user_id)
+
+        if not deleted:
+            return render_error(404, "User with specified userId not found.")
         return {}, 204
 
 
@@ -204,9 +217,7 @@ class Datasets(Resource):
     def get(self):
         args = parser.parse_args(strict=True)
         
-        response = jsonify(rows_to_json(db.get_datasets(args.userId)))
-        response.status_code = 200
-        return response
+        return rows_to_json(db.get_datasets(args.userId))
     
     def post(self):
         args = parser.parse_args(strict=True)
@@ -231,10 +242,12 @@ class Datasets(Resource):
             if len(dataset_errors) > 0:
                 errors.extend(dataset_errors)
             else:
-                dataset_name = request.form['datasetName']
                 # dataset_class = load_args(ckpt).dataset_type  # TODO: SWITCH TO ACTUALLY FINDING THE CLASS
 
                 new_dataset = db.insert_dataset(args.datasetName, args.userId, 'UNKNOWN')
+
+                if not new_dataset:
+                    return render_error(400, "User with specified userId not found.")
 
                 dataset_path = os.path.join(app.config['DATA_FOLDER'], f'{new_dataset["id"]}.csv')
 
@@ -244,16 +257,48 @@ class Datasets(Resource):
                 shutil.copy(temp_file.name, dataset_path)
         
         if len(errors) != 0:
-            return render_error(415, errors), 415
+            return render_error(415, errors)
 
-        new_dataset = row_to_json(new_dataset)
+        new_dataset = row_to_json(new_dataset, j = False)
         new_dataset['warnings'] = warnings
-        response = jsonify(new_dataset)
-        response.status_code = 200
-        return response
+        return jsonify(new_dataset)
 
 
 class Dataset(Resource):
+    def get(self, dataset_id):
+        """
+        Downloads a dataset as a .csv file.
+
+        :param dataset: The id of the dataset to download.
+        """
+        if not str.isdigit(dataset_id):
+            return render_error(400, "datasetId should be an integer.")
+        
+        dataset = db.get_dataset(int(dataset_id))
+        if not dataset:
+            return render_error(404, "Dataset with specified datasetId not found.")
+
+        return row_to_json(dataset)
+    
+    def delete(self, dataset_id):
+        """
+        Deletes a dataset.
+
+        :param dataset: The id of the dataset to delete.
+        """
+        if not str.isdigit(dataset_id):
+            return render_error(400, "datasetId should be an integer.")
+
+        deleted = db.delete_dataset(dataset_id)
+
+        if not deleted:
+            return render_error(404, "Dataset with specified datasetId not found.")
+
+        os.remove(os.path.join(app.config['DATA_FOLDER'], f'{dataset_id}.csv'))
+        return {}, 204
+
+
+class DatasetFile(Resource):
     def get(self, dataset_id):
         """
         Downloads a dataset as a .csv file.
@@ -266,21 +311,8 @@ class Dataset(Resource):
         dataset = send_from_directory(app.config['DATA_FOLDER'], f'{dataset_id}.csv', as_attachment=True, cache_timeout=-1)
 
         if not dataset:
-            return render_error(404, 'Dataset with specified datasetId not found.'), 404
-        return row_to_json(dataset)
-    
-    def delete(self, dataset_id):
-        """
-        Deletes a dataset.
-
-        :param dataset: The id of the dataset to delete.
-        """
-        if not str.isdigit(dataset_id):
-            return render_error(400, "datasetId should be an integer.")
-
-        db.delete_dataset(dataset_id)
-        os.remove(os.path.join(app.config['DATA_FOLDER'], f'{dataset_id}.csv'))
-        return {}, 204
+            return render_error(404, 'Dataset with specified datasetId not found.')
+        return dataset
 
 
 def render_train(**kwargs):
@@ -295,6 +327,7 @@ def render_train(**kwargs):
                            data_upload_errors=data_upload_errors,
                            users=db.get_all_users(),
                            **kwargs)
+
 
 @app.route('/train', methods=['GET', 'POST'])
 @check_not_demo

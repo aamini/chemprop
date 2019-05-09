@@ -128,7 +128,13 @@ def delete_user(user_id: int):
     associated checkpoints, and the corresponding files.
 
     :param user_id: The id of the user to be deleted.
+    :return Boolean identifying if the selected dataset was deleted.
     """
+    exists = get_user(user_id)
+
+    if not exists:
+        return False
+
     ids = query_db(f'SELECT id FROM ckpt WHERE userId = {user_id}')
 
     for id_ in ids:
@@ -139,6 +145,7 @@ def delete_user(user_id: int):
     db.execute(f'DELETE FROM user WHERE id = {user_id}')
     db.commit()
     cur.close()
+    return True
 
 
 def get_ckpts(user_id: int) -> List[sqlite3.Row]:
@@ -184,6 +191,11 @@ def insert_ckpt(ckpt_name: str,
     :param training_size: The number of molecules used for training.
     :return A tuple containing the id and name of the new checkpoint.   
     """
+    exists = get_user(user_id)
+
+    if not exists:
+        return None
+
     db = get_db()
 
     new_ckpt_id = None
@@ -214,8 +226,13 @@ def delete_ckpt(ckpt_id: int):
     Removes the checkpoint with the specified id from the database,
     associated model columns, and the corresponding files.
 
-    :param ckpt_id: The id of the checkpoint to be deleted.
+    :return Boolean identifying if the selected ckpt was deleted.
     """
+    exists = get_ckpt(ckpt_id)
+
+    if not exists:
+        return False
+
     rows = query_db(f'SELECT * FROM model WHERE ckptId = {ckpt_id}')
 
     for row in rows:
@@ -227,6 +244,7 @@ def delete_ckpt(ckpt_id: int):
     db.execute(f'DELETE FROM model WHERE ckptId = {ckpt_id}')
     db.commit()
     cur.close()
+    return True
 
 
 def get_models(ckpt_id: int) -> List[sqlite3.Row]:
@@ -259,6 +277,10 @@ def insert_model(ckpt_id: int) -> str:
     :param ckpt_id: The id of the checkpoint this model should be associated with.
     :return: The id of the new model.
     """
+    exists = get_ckpt(ckpt_id)
+    if not exists:
+        return None
+
     db = get_db()
     cur = db.execute('INSERT INTO model (ckptId) VALUES (?)', [ckpt_id])
     new_model_id = cur.lastrowid
@@ -305,6 +327,10 @@ def insert_dataset(dataset_name: str,
     :param dataset_class: The class of the new dataset.
     :return A tuple containing the id and name of the new dataset.   
     """
+    exists = get_user(user_id)
+    if not exists:
+        return None
+
     db = get_db()
 
     new_dataset_id = None
@@ -328,14 +354,21 @@ def insert_dataset(dataset_name: str,
     return get_dataset(new_dataset_id)
 
 
-def delete_dataset(dataset_id: int):
+def delete_dataset(dataset_id: int) -> bool:
     """
     Removes the dataset with the specified id from the database,
     and deletes the corresponding file.
 
     :param dataset_id: The id of the dataset to be deleted.
+    :return Boolean identifying if the selected dataset was deleted.
     """
+    exists = get_dataset(dataset_id)
+
+    if not exists:
+        return False
+
     db = get_db()
     cur = db.execute(f'DELETE FROM dataset WHERE id = {dataset_id}')
     db.commit()
     cur.close()
+    return True
