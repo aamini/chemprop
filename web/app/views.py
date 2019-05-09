@@ -6,6 +6,7 @@ import io
 import os
 import sys
 import shutil
+import sqlite3
 from tempfile import TemporaryDirectory, NamedTemporaryFile
 import time
 from typing import Callable, List, Tuple
@@ -138,6 +139,14 @@ def format_float_list(array: List[float], precision: int = 4) -> List[str]:
     return [format_float(f, precision) for f in array]
 
 
+def row_to_json(row: sqlite3.Row):
+    return {key: row[key] for key in row.keys()}
+
+
+def rows_to_json(rows: List[sqlite3.Row]):
+    return [row_to_json(row) for row in rows]
+
+
 def render_error(status: int, message: str):
     """
     :param status The error code.
@@ -160,7 +169,7 @@ parser.add_argument('file', type=werkzeug.datastructures.FileStorage, location='
 
 class Users(Resource):
     def get(self):
-        return db.get_users()
+        return rows_to_json(db.get_users())
     
     def post(self):
         args = parser.parse_args(strict=True)
@@ -169,7 +178,7 @@ class Users(Resource):
             return render_error(400, "Must specify a userName.")
 
         new_user = db.insert_user(args.userName)
-        return new_user, 201
+        return row_to_json(new_user), 201
 
 
 class User(Resource):
@@ -181,7 +190,7 @@ class User(Resource):
         if not user:
             return render_error(404, "User with specified userId not found.")
 
-        return user
+        return row_to_json(user)
     
     def delete(self, user_id):
         if not str.isdigit(user_id):
@@ -195,7 +204,9 @@ class Datasets(Resource):
     def get(self):
         args = parser.parse_args(strict=True)
         
-        return db.get_datasets(args.userId)
+        response = jsonify(rows_to_json(db.get_datasets(args.userId)))
+        response.status_code = 200
+        return response
     
     def post(self):
         args = parser.parse_args(strict=True)
@@ -225,20 +236,21 @@ class Datasets(Resource):
 
                 new_dataset = db.insert_dataset(args.datasetName, args.userId, 'UNKNOWN')
 
-                dataset_path = os.path.join(app.config['DATA_FOLDER'], f'{dataset_id}.csv')
+                dataset_path = os.path.join(app.config['DATA_FOLDER'], f'{new_dataset["id"]}.csv')
 
-                if dataset_name != new_dataset_name:
-                    warnings.append(name_already_exists_message('Data', args.datasetName, new_dataset_name))
+                if dataset_name != new_dataset["datasetName"]:
+                    warnings.append(name_already_exists_message('Data', args.datasetName, new_dataset["datasetName"]))
 
                 shutil.copy(temp_file.name, dataset_path)
-
-        warnings, errors = json.dumps(warnings), json.dumps(errors)
         
         if len(errors) != 0:
             return render_error(415, errors), 415
 
+        new_dataset = row_to_json(new_dataset)
         new_dataset['warnings'] = warnings
-        return new_dataset
+        response = jsonify(new_dataset)
+        response.status_code = 200
+        return response
 
 
 class Dataset(Resource):
@@ -255,7 +267,7 @@ class Dataset(Resource):
 
         if not dataset:
             return render_error(404, 'Dataset with specified datasetId not found.'), 404
-        return dataset
+        return row_to_json(dataset)
     
     def delete(self, dataset_id):
         """
