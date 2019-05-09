@@ -252,7 +252,7 @@ class Datasets(Resource):
 
                 dataset_path = os.path.join(app.config['DATA_FOLDER'], f'{new_dataset["id"]}.csv')
 
-                if dataset_name != new_dataset["datasetName"]:
+                if args.datasetName != new_dataset["datasetName"]:
                     warnings.append(name_already_exists_message('Data', args.datasetName, new_dataset["datasetName"]))
 
                 shutil.copy(temp_file.name, dataset_path)
@@ -311,11 +311,14 @@ class DatasetFile(Resource):
         if not str.isdigit(dataset_id):
             return render_error(400, "datasetId should be an integer.")
 
-        dataset = send_from_directory(app.config['DATA_FOLDER'], f'{dataset_id}.csv', as_attachment=True, cache_timeout=-1)
+        dataset = db.get_dataset(dataset_id)
 
         if not dataset:
             return render_error(404, 'Dataset with specified datasetId not found.')
-        return dataset
+
+        dataset_file = send_from_directory(app.config['DATA_FOLDER'], f'{dataset_id}.csv', as_attachment=True, attachment_name=dataset['datasetName'], cache_timeout=-1)
+
+        return dataset_file
 
 
 class Checkpoints(Resource):
@@ -379,7 +382,7 @@ class Checkpoint(Resource):
 
         return row_to_json(ckpt)  
 
-    def delete(self, ckpt_id)     
+    def delete(self, ckpt_id):
         if not str.isdigit(ckpt_id):
             return render_error(400, "ckptId should be an integer.")
         
