@@ -14,6 +14,11 @@ from app import views
 
 api.add_resource(views.Users, '/users')
 api.add_resource(views.User, '/users/<user_id>')
+
 api.add_resource(views.Datasets, '/datasets')
 api.add_resource(views.Dataset, '/datasets/<dataset_id>')
 api.add_resource(views.DatasetFile, '/files/datasets/<dataset_id>')
+
+api.add_resource(views.Checkpoints, '/checkpoints')
+api.add_resource(views.Checkpoint, '/checkpoints/<ckpt_id>')
+api.add_resource(views.CheckpointFile, '/files/checkpoints/<ckpt_id>')

@@ -173,6 +173,7 @@ parser = reqparse.RequestParser()
 parser.add_argument('userId', type=int, help='The id of the user.')
 parser.add_argument('userName', type=str, help='The name of the user.')
 parser.add_argument('datasetName', type=str, help='The name of the dataset.')
+parser.add_argument('checkpointName', type=str, help='The name of the checkpoint.')
 parser.add_argument('file', type=werkzeug.datastructures.FileStorage, location='files')
 
 class Users(Resource):
@@ -261,7 +262,9 @@ class Datasets(Resource):
 
         new_dataset = row_to_json(new_dataset, j = False)
         new_dataset['warnings'] = warnings
-        return jsonify(new_dataset)
+        response = jsonify(new_dataset)
+        response.status_code = 201
+        return response
 
 
 class Dataset(Resource):
@@ -313,6 +316,109 @@ class DatasetFile(Resource):
         if not dataset:
             return render_error(404, 'Dataset with specified datasetId not found.')
         return dataset
+
+
+class Checkpoints(Resource):
+    def get(self):
+        args = parser.parse_args(strict=True)
+
+        return rows_to_json(db.get_ckpts(args.userId))        
+
+    def post(self):
+        args = parser.parse_args(strict=True)
+
+        if not args.userId:
+            return render_error(400, "Must specify a userId.")
+        
+        if not args.checkpointName:
+            return render_error(400, "Must specify a checkpointName.")
+
+        if not args.file:
+            return render_error(400, "Must specify a file.")
+
+        # Create temporary file to get ckpt_args without losing data.
+        with NamedTemporaryFile() as temp_file:
+            args.file.save(temp_file.name)
+
+            ckpt_args = load_args(temp_file)
+
+            ckpt = db.insert_ckpt(ckpt_name,
+                                  current_user,
+                                  ckpt_args.dataset_type,
+                                  ckpt_args.epochs,
+                                  1,
+                                  ckpt_args.train_data_size)
+
+            if not new_dataset:
+                return render_error(400, "User with specified userId not found.")
+
+            model = db.insert_model(ckpt['id'])
+
+            model_path = os.path.join(app.config['CHECKPOINT_FOLDER'], f'{model["id"]}.pt')
+
+            if ckpt["ckptName"] != args.checkpointName:
+                warnings.append(name_already_exists_message('Checkpoint', ckpt["ckptName"], args.checkpointName))
+
+            shutil.copy(temp_file.name, model_path)
+
+        ckpt = row_to_json(ckpt, j = False)
+        ckpt['warnings'] = warnings
+        repsonse = jsonify(ckpt)
+        response.status_code = 201
+        return response
+
+
+class Checkpoint(Resource):
+    def get(self, ckpt_id):
+        if not str.isdigit(ckpt_id):
+            return render_error(400, "ckptId should be an integer.")
+        
+        ckpt = db.get_ckpt(int(ckpt_id))
+        if not ckpt:
+            return render_error(404, "Checkpoint with specified ckptId not found.")
+
+        return row_to_json(ckpt)  
+
+    def delete(self, ckpt_id)     
+        if not str.isdigit(ckpt_id):
+            return render_error(400, "ckptId should be an integer.")
+        
+        deleted = db.delete_ckpt(ckpt_id)
+
+        if not deleted:
+            return render_error(404, "Checkpoint with specified ckptId not found.")
+        
+        return {}, 204
+
+
+class CheckpointFile(Resource):
+    def get(self, ckpt_id):
+        if not str.isdigit(dataset_id):
+            return render_error(400, "datasetId should be an integer.")
+        
+        ckpt = db.get_ckpt(ckpt_id)
+
+        if not ckpt:
+            return render_error(404, "Checkpoint with specified ckptId not found.")
+        
+        models = db.get_models(ckpt_id)
+
+        model_data = io.BytesIO()
+
+        with zipfile.ZipFile(model_data, mode='w') as z:
+            for model in models:
+                model_path = os.path.join(app.config['CHECKPOINT_FOLDER'], f'{model["id"]}.pt')
+                z.write(model_path, os.path.basename(model_path))
+
+        model_data.seek(0)
+
+        return send_file(
+            model_data,
+            mimetype='application/zip',
+            as_attachment=True,
+            attachment_filename=f'{ckpt["ckpt_name"]}.zip',
+            cache_timeout=-1
+        )
 
 
 def render_train(**kwargs):
@@ -522,103 +628,3 @@ def predict():
 def download_predictions():
     """Downloads predictions as a .csv file."""
     return send_from_directory(app.config['TEMP_FOLDER'], app.config['PREDICTIONS_FILENAME'], as_attachment=True, cache_timeout=-1)
-
-
-@app.route('/checkpoints')
-@check_not_demo
-def checkpoints():
-    """Renders the checkpoints page."""
-    checkpoint_upload_warnings, checkpoint_upload_errors = get_upload_warnings_errors('checkpoint')
-
-    return render_template('checkpoints.html',
-                           checkpoints=db.get_ckpts(request.cookies.get('currentUser')),
-                           checkpoint_upload_warnings=checkpoint_upload_warnings,
-                           checkpoint_upload_errors=checkpoint_upload_errors,
-                           users=db.get_all_users())
-
-
-@app.route('/checkpoints/upload/<string:return_page>', methods=['POST'])
-@check_not_demo
-def upload_checkpoint(return_page: str):
-    """
-    Uploads a checkpoint .pt file.
-
-    :param return_page: The name of the page to render after uploading the checkpoint file.
-    """
-    warnings, errors = [], []
-
-    current_user = request.cookies.get('currentUser')
-
-    if not current_user:
-        # Use DEFAULT as current user if the client's cookie is not set.
-        current_user = app.config['DEFAULT_USER_ID']
-
-    ckpt = request.files['checkpoint']
-
-    ckpt_name = request.form['checkpointName']
-
-    # Create temporary file to get ckpt_args without losing data.
-    with NamedTemporaryFile() as temp_file:
-        ckpt.save(temp_file.name)
-
-        ckpt_args = load_args(temp_file)
-
-        ckpt_id, new_ckpt_name = db.insert_ckpt(ckpt_name,
-                                                current_user,
-                                                ckpt_args.dataset_type,
-                                                ckpt_args.epochs,
-                                                1,
-                                                ckpt_args.train_data_size)
-
-        model_id = db.insert_model(ckpt_id)
-
-        model_path = os.path.join(app.config['CHECKPOINT_FOLDER'], f'{model_id}.pt')
-
-        if ckpt_name != new_ckpt_name:
-            warnings.append(name_already_exists_message('Checkpoint', ckpt_name, new_ckpt_name))
-
-        shutil.copy(temp_file.name, model_path)
-
-    warnings, errors = json.dumps(warnings), json.dumps(errors)
-
-    return redirect(url_for(return_page, checkpoint_upload_warnings=warnings, checkpoint_upload_errors=errors))
-
-
-@app.route('/checkpoints/download/<int:checkpoint>')
-@check_not_demo
-def download_checkpoint(checkpoint: int):
-    """
-    Downloads a zip of model .pt files.
-
-    :param checkpoint: The name of the checkpoint to download.
-    """
-    ckpt = db.query_db(f'SELECT * FROM ckpt WHERE id = {checkpoint}', one = True)
-    models = db.get_models(checkpoint)
-
-    model_data = io.BytesIO()
-
-    with zipfile.ZipFile(model_data, mode='w') as z:
-        for model in models:
-            model_path = os.path.join(app.config['CHECKPOINT_FOLDER'], f'{model["id"]}.pt')
-            z.write(model_path, os.path.basename(model_path))
-
-    model_data.seek(0)
-
-    return send_file(
-        model_data,
-        mimetype='application/zip',
-        as_attachment=True,
-        attachment_filename=f'{ckpt["ckpt_name"]}.zip',
-        cache_timeout=-1
-    )
-
-@app.route('/checkpoints/delete/<int:checkpoint>')
-@check_not_demo
-def delete_checkpoint(checkpoint: int):
-    """
-    Deletes a checkpoint file.
-
-    :param checkpoint: The id of the checkpoint to delete.
-    """
-    db.delete_ckpt(checkpoint)
-    return redirect(url_for('checkpoints'))
