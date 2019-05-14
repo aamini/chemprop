@@ -1,6 +1,6 @@
 """Defines a number of routes/views for the flask app."""
 
-from argparse import ArgumentParser, Namespace
+from argparse import ArgumentParser
 from functools import wraps
 import io
 import os
@@ -8,15 +8,12 @@ import sys
 import shutil
 import sqlite3
 from tempfile import TemporaryDirectory, NamedTemporaryFile
-import time
-from typing import Callable, List, Tuple
-import multiprocessing as mp
+from typing import Any, Callable, Dict, List
 import werkzeug
 import zipfile
 
-from flask import json, jsonify, redirect, render_template, request, send_file, send_from_directory, url_for
+from flask import jsonify, redirect, Response, send_file, send_from_directory, url_for
 from flask_restful import Resource, reqparse
-import numpy as np
 from rdkit import Chem
 from werkzeug.utils import secure_filename
 
@@ -30,8 +27,6 @@ from chemprop.train.make_predictions import make_predictions
 from chemprop.train.run_training import run_training
 from chemprop.utils import create_logger, load_task_names, load_args
 
-TRAINING = 0
-PROGRESS = mp.Value('d', 0.0)
 
 def check_not_demo(func: Callable) -> Callable:
     """
@@ -48,46 +43,6 @@ def check_not_demo(func: Callable) -> Callable:
 
     return decorated_function
 
-def progress_bar(args: Namespace, progress: mp.Value):
-    """
-    Updates a progress bar displayed during training.
-
-    :param args: Arguments.
-    :param progress: The current progress.
-    """
-    # no code to handle crashes in model training yet, though
-    current_epoch = -1
-    while current_epoch < args.epochs - 1:
-        if os.path.exists(os.path.join(args.save_dir, 'verbose.log')):
-            with open(os.path.join(args.save_dir, 'verbose.log'), 'r') as f:
-                content = f.read()
-                if 'Epoch ' + str(current_epoch + 1) in content:
-                    current_epoch += 1
-                    progress.value = (current_epoch + 1) * 100 / args.epochs
-        else:
-            pass
-        time.sleep(0)
-
-
-def find_unused_path(path: str) -> str:
-    """
-    Given an initial path, finds an unused path by appending different numbers to the filename.
-
-    :param path: An initial path.
-    :return: An unused path.
-    """
-    if not os.path.exists(path):
-        return path
-
-    base_name, ext = os.path.splitext(path)
-
-    i = 2
-    while os.path.exists(path):
-        path = base_name + str(i) + ext
-        i += 1
-
-    return path
-
 
 def name_already_exists_message(thing_being_named: str, original_name: str, new_name: str) -> str:
     """
@@ -100,43 +55,6 @@ def name_already_exists_message(thing_being_named: str, original_name: str, new_
     """
     return f'{thing_being_named} "{original_name} already exists. ' \
            f'Saving to "{new_name}".'
-
-
-def get_upload_warnings_errors(upload_item: str) -> Tuple[List[str], List[str]]:
-    """
-    Gets any upload warnings passed along in the request.
-
-    :param upload_item: The thing being uploaded (ex. Data, Checkpoint).
-    :return: A tuple with a list of warning messages and a list of error messages.
-    """
-    warnings_raw = request.args.get(f'{upload_item}_upload_warnings')
-    errors_raw = request.args.get(f'{upload_item}_upload_errors')
-    warnings = json.loads(warnings_raw) if warnings_raw is not None else None
-    errors = json.loads(errors_raw) if errors_raw is not None else None
-
-    return warnings, errors
-
-
-def format_float(value: float, precision: int = 4) -> str:
-    """
-    Formats a float value to a specific precision.
-
-    :param value: The float value to format.
-    :param precision: The number of decimal places to use.
-    :return: A string containing the formatted float.
-    """
-    return f'{value:.{precision}f}'
-
-
-def format_float_list(array: List[float], precision: int = 4) -> List[str]:
-    """
-    Formats a list of float values to a specific precision.
-
-    :param array: A list of float values to format.
-    :param precision: The number of decimal places to use.
-    :return: A list of strings containing the formatted floats.
-    """
-    return [format_float(f, precision) for f in array]
 
 
 def row_to_json(row: sqlite3.Row, j: bool = True):
@@ -163,24 +81,32 @@ def render_error(status: int, message: str):
     return {"status": status, "message": message}, status
 
 
-# @app.route('/receiver', methods=['POST'])
-# @check_not_demo
-# def receiver():
-#     """Receiver monitoring the progress of training."""
-#     return jsonify(progress=PROGRESS.value, training=TRAINING)
-
 parser = reqparse.RequestParser()
+parser.add_argument('file', type=werkzeug.datastructures.FileStorage, location='files')
 parser.add_argument('userId', type=int, help='The id of the user.')
 parser.add_argument('userName', type=str, help='The name of the user.')
 parser.add_argument('datasetName', type=str, help='The name of the dataset.')
+parser.add_argument('datasetId', type=int, help='The id of the dataset.')
+parser.add_argument('checkpointId', type=str, help='The id of the checkpoint.')
 parser.add_argument('checkpointName', type=str, help='The name of the checkpoint.')
-parser.add_argument('file', type=werkzeug.datastructures.FileStorage, location='files')
+parser.add_argument('ensembleSize', type=int, help='Training ensemble size.')
+parser.add_argument('epochs', type=int, help='Number of training epochs.')
+parser.add_argument('gpuId', type=int, help='Id of gpu used for training.')
+parser.add_argument('smiles', type=str, action='append', help='Smiles for prediction.')
+
 
 class Users(Resource):
     def get(self):
+        """
+        :return: A list of all users.
+        """
         return rows_to_json(db.get_users())
     
     def post(self):
+        """
+        Creates a new user in the database.
+        :return: The newly created user object.
+        """
         args = parser.parse_args(strict=True)
 
         if not args.userName:
@@ -193,10 +119,12 @@ class Users(Resource):
 
 
 class User(Resource):
-    def get(self, user_id):
-        if not str.isdigit(user_id):
-            return render_error(400, "userId should be an integer.")
-        
+    def get(self, user_id: int):
+        """
+
+        :param user_id: The id of the user to be returned.
+        :return: A requested user object.
+        """
         user = db.get_user(int(user_id))
         if not user:
             return render_error(404, "User with specified userId not found.")
@@ -204,9 +132,6 @@ class User(Resource):
         return row_to_json(user)
     
     def delete(self, user_id):
-        if not str.isdigit(user_id):
-            return render_error(400, "userId should be an integer.")
-
         deleted = db.delete_user(user_id)
 
         if not deleted:
@@ -225,7 +150,7 @@ class Datasets(Resource):
 
         if not args.userId:
             return render_error(400, "Must specify a userId.")
-        
+
         if not args.datasetName:
             return render_error(400, "Must specify a datasetName.")
 
@@ -241,11 +166,17 @@ class Datasets(Resource):
             dataset_errors = validate_data(temp_file.name)
 
             if len(dataset_errors) > 0:
-                errors.extend(dataset_errors)
+                return render_error(422, "Invalid dataset file.")
             else:
-                # dataset_class = load_args(ckpt).dataset_type  # TODO: SWITCH TO ACTUALLY FINDING THE CLASS
+                targets = get_data(temp_file.name).targets()
+                unique_targets = {target for row in targets for target in row if target is not None}
 
-                new_dataset = db.insert_dataset(args.datasetName, args.userId, 'UNKNOWN')
+                if unique_targets <= {0, 1}:
+                    dataset_type = 'classification'
+                else:
+                    dataset_type = 'regression'
+
+                new_dataset = db.insert_dataset(args.datasetName, args.userId, dataset_type, len(targets))
 
                 if not new_dataset:
                     return render_error(400, "User with specified userId not found.")
@@ -274,9 +205,6 @@ class Dataset(Resource):
 
         :param dataset: The id of the dataset to download.
         """
-        if not str.isdigit(dataset_id):
-            return render_error(400, "datasetId should be an integer.")
-        
         dataset = db.get_dataset(int(dataset_id))
         if not dataset:
             return render_error(404, "Dataset with specified datasetId not found.")
@@ -287,11 +215,8 @@ class Dataset(Resource):
         """
         Deletes a dataset.
 
-        :param dataset: The id of the dataset to delete.
+        :param dataset_id: The id of the dataset to delete.
         """
-        if not str.isdigit(dataset_id):
-            return render_error(400, "datasetId should be an integer.")
-
         deleted = db.delete_dataset(dataset_id)
 
         if not deleted:
@@ -306,17 +231,18 @@ class DatasetFile(Resource):
         """
         Downloads a dataset as a .csv file.
 
-        :param dataset: The id of the dataset to download.
+        :param dataset_id: The id of the dataset to download.
         """
-        if not str.isdigit(dataset_id):
-            return render_error(400, "datasetId should be an integer.")
-
         dataset = db.get_dataset(dataset_id)
 
         if not dataset:
             return render_error(404, 'Dataset with specified datasetId not found.')
 
-        dataset_file = send_from_directory(app.config['DATA_FOLDER'], f'{dataset_id}.csv', as_attachment=True, attachment_name=dataset['datasetName'], cache_timeout=-1)
+        dataset_file = send_from_directory(app.config['DATA_FOLDER'],
+                                           f'{dataset_id}.csv',
+                                           as_attachment=True,
+                                           attachment_filename=f'{dataset["datasetName"]}.csv',
+                                           cache_timeout=-1)
 
         return dataset_file
 
@@ -325,7 +251,7 @@ class Checkpoints(Resource):
     def get(self):
         args = parser.parse_args(strict=True)
 
-        return rows_to_json(db.get_ckpts(args.userId))        
+        return rows_to_json(db.get_checkpoints(args.userId))        
 
     def post(self):
         args = parser.parse_args(strict=True)
@@ -339,72 +265,65 @@ class Checkpoints(Resource):
         if not args.file:
             return render_error(400, "Must specify a file.")
 
-        # Create temporary file to get ckpt_args without losing data.
+        warnings = []
+
+        # Create temporary file to get checkpoint_args without losing data.
         with NamedTemporaryFile() as temp_file:
             args.file.save(temp_file.name)
 
-            ckpt_args = load_args(temp_file)
+            checkpoint_args = load_args(temp_file)
 
-            ckpt = db.insert_ckpt(ckpt_name,
-                                  current_user,
-                                  ckpt_args.dataset_type,
-                                  ckpt_args.epochs,
+            checkpoint = db.insert_checkpoint(args.checkpointName,
+                                  args.userId,
+                                  checkpoint_args.dataset_type,
+                                  checkpoint_args.epochs,
                                   1,
-                                  ckpt_args.train_data_size)
+                                  checkpoint_args.train_data_size)
 
-            if not new_dataset:
+            if not checkpoint:
                 return render_error(400, "User with specified userId not found.")
 
-            model = db.insert_model(ckpt['id'])
+            model = db.insert_model(checkpoint['id'])
 
             model_path = os.path.join(app.config['CHECKPOINT_FOLDER'], f'{model["id"]}.pt')
 
-            if ckpt["ckptName"] != args.checkpointName:
-                warnings.append(name_already_exists_message('Checkpoint', ckpt["ckptName"], args.checkpointName))
+            if checkpoint["checkpointName"] != args.checkpointName:
+                warnings.append(name_already_exists_message('Checkpoint', checkpoint["checkpointName"], args.checkpointName))
 
             shutil.copy(temp_file.name, model_path)
 
-        ckpt = row_to_json(ckpt, j = False)
-        ckpt['warnings'] = warnings
-        repsonse = jsonify(ckpt)
+        checkpoint = row_to_json(checkpoint, j = False)
+        checkpoint['warnings'] = warnings
+        response = jsonify(checkpoint)
         response.status_code = 201
         return response
 
 
 class Checkpoint(Resource):
-    def get(self, ckpt_id):
-        if not str.isdigit(ckpt_id):
-            return render_error(400, "ckptId should be an integer.")
-        
-        ckpt = db.get_ckpt(int(ckpt_id))
-        if not ckpt:
-            return render_error(404, "Checkpoint with specified ckptId not found.")
+    def get(self, checkpoint_id):
+        checkpoint = db.get_checkpoint(int(checkpoint_id))
+        if not checkpoint:
+            return render_error(404, "Checkpoint with specified checkpointId not found.")
 
-        return row_to_json(ckpt)  
+        return row_to_json(checkpoint)  
 
-    def delete(self, ckpt_id):
-        if not str.isdigit(ckpt_id):
-            return render_error(400, "ckptId should be an integer.")
-        
-        deleted = db.delete_ckpt(ckpt_id)
+    def delete(self, checkpoint_id):
+        deleted = db.delete_checkpoint(checkpoint_id)
 
         if not deleted:
-            return render_error(404, "Checkpoint with specified ckptId not found.")
+            return render_error(404, "Checkpoint with specified checkpointId not found.")
         
         return {}, 204
 
 
 class CheckpointFile(Resource):
-    def get(self, ckpt_id):
-        if not str.isdigit(dataset_id):
-            return render_error(400, "datasetId should be an integer.")
-        
-        ckpt = db.get_ckpt(ckpt_id)
+    def get(self, checkpoint_id):
+        checkpoint = db.get_checkpoint(checkpoint_id)
 
-        if not ckpt:
-            return render_error(404, "Checkpoint with specified ckptId not found.")
+        if not checkpoint:
+            return render_error(404, "Checkpoint with specified checkpointId not found.")
         
-        models = db.get_models(ckpt_id)
+        models = db.get_models(checkpoint_id)
 
         model_data = io.BytesIO()
 
@@ -419,215 +338,148 @@ class CheckpointFile(Resource):
             model_data,
             mimetype='application/zip',
             as_attachment=True,
-            attachment_filename=f'{ckpt["ckpt_name"]}.zip',
+            attachment_filename=f'{checkpoint["checkpointName"]}.zip',
             cache_timeout=-1
         )
 
 
-def render_train(**kwargs):
-    """Renders the train page with specified kwargs."""
-    data_upload_warnings, data_upload_errors = get_upload_warnings_errors('data')
+class Train(Resource):
+    def post(self):
+        args = parser.parse_args(strict=True)
 
-    return render_template('train.html',
-                           datasets=db.get_datasets(request.cookies.get('currentUser')),
-                           cuda=app.config['CUDA'],
-                           gpus=app.config['GPUS'],
-                           data_upload_warnings=data_upload_warnings,
-                           data_upload_errors=data_upload_errors,
-                           users=db.get_all_users(),
-                           **kwargs)
+        if not args.userId:
+            return render_error(400, "Must specify a userId.")
+        
+        if not args.checkpointName:
+            return render_error(400, "Must specify a checkpointName.")
+        
+        if not args.datasetId:
+            return render_error(400, "Must specify a datasetId.")
+        
+        if not args.epochs:
+            args.epochs = 30
+        
+        if not args.ensembleSize:
+            args.ensembleSize = 1
 
+        warnings = []
 
-@app.route('/train', methods=['GET', 'POST'])
-@check_not_demo
-def train():
-    """Renders the train page and performs training if request method is POST."""
-    global PROGRESS, TRAINING
+        data_path = os.path.join(app.config['DATA_FOLDER'], f'{args.datasetId}.csv')
 
-    warnings, errors = [], []
+        data = db.get_dataset(args.datasetId)
 
-    if request.method == 'GET':
-        return render_train()
+        if not data:
+            return render_error(404, "Dataset with specified datasetId not found.")
 
-    # Get arguments
-    data_name, epochs, ensemble_size, checkpoint_name = \
-        request.form['dataName'], int(request.form['epochs']), \
-        int(request.form['ensembleSize']), request.form['checkpointName']
-    gpu = request.form.get('gpu')
-    data_path = os.path.join(app.config['DATA_FOLDER'], f'{data_name}.csv')
-    dataset_type = request.form.get('datasetType', 'regression')
+        # Create and modify args
+        arg_parser = ArgumentParser()
+        add_train_args(arg_parser)
+        checkpoint_args = arg_parser.parse_args([])
 
-    # Create and modify args
-    parser = ArgumentParser()
-    add_train_args(parser)
-    args = parser.parse_args([])
+        checkpoint_args.data_path = data_path
+        checkpoint_args.dataset_type = data['class']
+        checkpoint_args.epochs = args.epochs
+        checkpoint_args.ensemble_size = args.ensembleSize
 
-    args.data_path = data_path
-    args.dataset_type = dataset_type
-    args.epochs = epochs
-    args.ensemble_size = ensemble_size
-
-    # Check if regression/classification selection matches data
-    data = get_data(path=data_path)
-    targets = data.targets()
-    unique_targets = {target for row in targets for target in row if target is not None}
-
-    if dataset_type == 'classification' and len(unique_targets - {0, 1}) > 0:
-        errors.append('Selected classification dataset but not all labels are 0 or 1. Select regression instead.')
-
-        return render_train(warnings=warnings, errors=errors)
-
-    if dataset_type == 'regression' and unique_targets <= {0, 1}:
-        errors.append('Selected regression dataset but all labels are 0 or 1. Select classification instead.')
-
-        return render_train(warnings=warnings, errors=errors)
-
-    if gpu is not None:
-        if gpu == 'None':
-            args.no_cuda = True
+        if args.gpuId:
+            checkpoint_args.gpu = args.gpuId
         else:
-            args.gpu = int(gpu)
+            checkpoint_args.no_cuda = True
 
-    current_user = request.cookies.get('currentUser')
+        checkpoint = db.insert_checkpoint(args.checkpointName,
+                              args.userId,
+                              checkpoint_args.dataset_type,
+                              checkpoint_args.epochs,
+                              checkpoint_args.ensemble_size,
+                              data['size'])
 
-    if not current_user:
-        # Use DEFAULT as current user if the client's cookie is not set.
-        current_user = app.config['DEFAULT_USER_ID']
+        if not checkpoint:
+            return render_error(400, "User with specified userId not found.")
 
-    ckpt_id, ckpt_name = db.insert_ckpt(checkpoint_name,
-                                        current_user,
-                                        args.dataset_type,
-                                        args.epochs,
-                                        args.ensemble_size,
-                                        len(targets))
+        with TemporaryDirectory() as temp_dir:
+            args.save_dir = temp_dir
+            modify_train_args(checkpoint_args)
 
-    with TemporaryDirectory() as temp_dir:
-        args.save_dir = temp_dir
-        modify_train_args(args)
+            # Run training
+            logger = create_logger(name='train', save_dir=checkpoint_args.save_dir, quiet=checkpoint_args.quiet)
+            task_scores = run_training(checkpoint_args, logger)
 
-        process = mp.Process(target=progress_bar, args=(args, PROGRESS))
-        process.start()
-        TRAINING = 1
+            # Check if name overlap
+            if args.checkpointName != checkpoint['checkpointName']:
+                warnings.append(name_already_exists_message('Checkpoint', args.checkpointName, checkpoint['checkpointName']))
 
-        # Run training
-        logger = create_logger(name='train', save_dir=args.save_dir, quiet=args.quiet)
-        task_scores = run_training(args, logger)
-        process.join()
+            # Move models
+            for root, _, files in os.walk(checkpoint_args.save_dir):
+                for fname in files:
+                    if fname.endswith('.pt'):
+                        model = db.insert_model(checkpoint['id'])
+                        save_path = os.path.join(app.config['CHECKPOINT_FOLDER'], f'{model["id"]}.pt')
+                        shutil.move(os.path.join(checkpoint_args.save_dir, root, fname), save_path)
 
-        # Reset globals
-        TRAINING = 0
-        PROGRESS = mp.Value('d', 0.0)
-
-        # Check if name overlap
-        if checkpoint_name != ckpt_name:
-            warnings.append(name_already_exists_message('Checkpoint', checkpoint_name, ckpt_name))
-
-        # Move models
-        for root, _, files in os.walk(args.save_dir):
-            for fname in files:
-                if fname.endswith('.pt'):
-                    model_id = db.insert_model(ckpt_id)
-                    save_path = os.path.join(app.config['CHECKPOINT_FOLDER'], f'{model_id}.pt')
-                    shutil.move(os.path.join(args.save_dir, root, fname), save_path)
-
-    return render_train(trained=True,
-                        metric=args.metric,
-                        num_tasks=len(args.task_names),
-                        task_names=args.task_names,
-                        task_scores=format_float_list(task_scores),
-                        mean_score=format_float(np.mean(task_scores)),
-                        warnings=warnings,
-                        errors=errors)
+        checkpoint = row_to_json(checkpoint, j = False)
+        checkpoint['warnings'] = warnings
+        response = jsonify(checkpoint)
+        response.status_code = 201
+        return response
 
 
-def render_predict(**kwargs):
-    """Renders the predict page with specified kwargs"""
-    checkpoint_upload_warnings, checkpoint_upload_errors = get_upload_warnings_errors('checkpoint')
+class Predict(Resource):
+    def post(self):
+        args = parser.parse_args(strict=True)
 
-    return render_template('predict.html',
-                           checkpoints=db.get_ckpts(request.cookies.get('currentUser')),
-                           cuda=app.config['CUDA'],
-                           gpus=app.config['GPUS'],
-                           checkpoint_upload_warnings=checkpoint_upload_warnings,
-                           checkpoint_upload_errors=checkpoint_upload_errors,
-                           users=db.get_all_users(),
-                           **kwargs)
+        if not args.checkpointId:
+            return render_error(400, "Must specify a checkpointId.")   
 
+        if args.smiles:
+            smiles = args.smiles
+        elif args.file:
+            data_name = secure_filename(args.file.filename)
+            data_path = os.path.join(app.config['TEMP_FOLDER'], data_name)
+            args.file.save(data_path)
 
-@app.route('/predict', methods=['GET', 'POST'])
-def predict():
-    """Renders the predict page and makes predictions if the method is POST."""
-    if request.method == 'GET':
-        return render_predict()
+            # Check if header is smiles
+            possible_smiles = get_header(data_path)[0]
+            smiles = [possible_smiles] if Chem.MolFromSmiles(possible_smiles) is not None else []
 
-    # Get arguments
-    ckpt_id = request.form['checkpointName']
-
-    if request.form['textSmiles'] != '':
-        smiles = request.form['textSmiles'].split()
-    elif request.form['drawSmiles'] != '':
-        smiles = [request.form['drawSmiles']]
-    else:
-        print(" GOT HERE")
-        # Upload data file with SMILES
-        data = request.files['data']
-        data_name = secure_filename(data.filename)
-        data_path = os.path.join(app.config['TEMP_FOLDER'], data_name)
-        data.save(data_path)
-
-        # Check if header is smiles
-        possible_smiles = get_header(data_path)[0]
-        smiles = [possible_smiles] if Chem.MolFromSmiles(possible_smiles) is not None else []
-
-        # Get remaining smiles
-        smiles.extend(get_smiles(data_path))
-
-    models = db.get_models(ckpt_id)
-    model_paths = [os.path.join(app.config['CHECKPOINT_FOLDER'], f'{model["id"]}.pt') for model in models]
-
-    task_names = load_task_names(model_paths[0])
-    num_tasks = len(task_names)
-    gpu = request.form.get('gpu')
-
-    # Create and modify args
-    parser = ArgumentParser()
-    add_predict_args(parser)
-    args = parser.parse_args([])
-
-    preds_path = os.path.join(app.config['TEMP_FOLDER'], app.config['PREDICTIONS_FILENAME'])
-    args.test_path = 'None'  # TODO: Remove this hack to avoid assert crashing in modify_predict_args
-    args.preds_path = preds_path
-    args.checkpoint_paths = model_paths
-    if gpu is not None:
-        if gpu == 'None':
-            args.no_cuda = True
+            # Get remaining smiles
+            smiles.extend(get_smiles(data_path))
         else:
-            args.gpu = int(gpu)
+            return render_error(400, "Must specify smiles or file.")
+        
+        models = db.get_models(args.checkpointId)
 
-    modify_predict_args(args)
+        if len(models) == 0:
+            return render_error(404, "No checkpoint found with specified checkpointId.")
 
-    # Run predictions
-    preds = make_predictions(args, smiles=smiles)
+        model_paths = [os.path.join(app.config['CHECKPOINT_FOLDER'], f'{model["id"]}.pt') for model in models]
 
-    if all(p is None for p in preds):
-        return render_predict(errors=['All SMILES are invalid'])
+        task_names = load_task_names(model_paths[0])
+        num_tasks = len(task_names)
 
-    # Replace invalid smiles with message
-    invalid_smiles_warning = "Invalid SMILES String"
-    preds = [pred if pred is not None else [invalid_smiles_warning] * num_tasks for pred in preds]
+        # Create and modify args
+        predict_parser = ArgumentParser()
+        add_predict_args(predict_parser)
+        predict_args = predict_parser.parse_args([])
 
-    return render_predict(predicted=True,
-                          smiles=smiles,
-                          num_smiles=min(10, len(smiles)),
-                          show_more=max(0, len(smiles)-10),
-                          task_names=task_names,
-                          num_tasks=len(task_names),
-                          preds=preds,
-                          warnings=["List contains invalid SMILES strings"] if None in preds else None,
-                          errors=["No SMILES strings given"] if len(preds) == 0 else None)
+        preds_path = os.path.join(app.config['TEMP_FOLDER'], app.config['PREDICTIONS_FILENAME'])
+        predict_args.test_path = 'None'  # TODO: Remove this hack to avoid assert crashing in modify_predict_args
+        predict_args.preds_path = preds_path
+        predict_args.checkpoint_paths = model_paths
 
+        if args.gpuId:
+            predict_args.gpu = args.gpuId
+        else:
+            predict_args.no_cuda = True
 
-@app.route('/download_predictions')
-def download_predictions():
-    """Downloads predictions as a .csv file."""
-    return send_from_directory(app.config['TEMP_FOLDER'], app.config['PREDICTIONS_FILENAME'], as_attachment=True, cache_timeout=-1)
+        modify_predict_args(predict_args)
+
+        # Run predictions
+        preds = make_predictions(predict_args, smiles=smiles)
+
+        if all(p is None for p in preds):
+            return render_error(422, "All SMILES invalid.")
+
+        invalid_smiles_warning = "Invalid SMILE"
+        preds = [pred if pred is not None else [invalid_smiles_warning] * num_tasks for pred in preds]
+
+        return jsonify(preds)

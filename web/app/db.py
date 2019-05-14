@@ -135,10 +135,10 @@ def delete_user(user_id: int):
     if not exists:
         return False
 
-    ids = query_db(f'SELECT id FROM ckpt WHERE userId = {user_id}')
+    ids = query_db(f'SELECT id FROM checkpoint WHERE userId = {user_id}')
 
     for id_ in ids:
-        delete_ckpt(id_)
+        delete_checkpoint(id_)
 
     db = get_db()
     cur = db.cursor()
@@ -148,7 +148,7 @@ def delete_user(user_id: int):
     return True
 
 
-def get_ckpts(user_id: int) -> List[sqlite3.Row]:
+def get_checkpoints(user_id: int) -> List[sqlite3.Row]:
     """
     Returns the checkpoints associated with the given user.
     If no user_id is provided, return the checkpoints associated
@@ -158,22 +158,22 @@ def get_ckpts(user_id: int) -> List[sqlite3.Row]:
     :return A list of checkpoints.
     """
     if not user_id:
-        return query_db(f'SELECT * FROM ckpt')
+        return query_db(f'SELECT * FROM checkpoint')
  
-    return query_db(f'SELECT * FROM ckpt WHERE userId = {user_id}')
+    return query_db(f'SELECT * FROM checkpoint WHERE userId = {user_id}')
 
 
-def get_ckpt(ckpt_id) -> sqlite3.Row:
+def get_checkpoint(checkpoint_id) -> sqlite3.Row:
     """
-    Returns a specific ckpt.
+    Returns a specific checkpoint.
 
-    :user_id The id of the ckpt to be returned.
-    :return A dict representing the desired ckpt.
+    :user_id The id of the checkpoint to be returned.
+    :return A dict representing the desired checkpoint.
     """
-    return query_db(f'SELECT * FROM ckpt WHERE id = {ckpt_id}', one = True)
+    return query_db(f'SELECT * FROM checkpoint WHERE id = {checkpoint_id}', one = True)
 
 
-def insert_ckpt(ckpt_name: str, 
+def insert_checkpoint(checkpoint_name: str, 
                 user_id: str, 
                 model_class: str, 
                 num_epochs: int,
@@ -183,7 +183,7 @@ def insert_ckpt(ckpt_name: str,
     Inserts a new checkpoint. If the desired name is already taken,  
     appends integers incrementally until an open name is found.   
 
-    :param ckpt_name: The desired name for the new checkpoint.
+    :param checkpoint_name: The desired name for the new checkpoint.
     :param user_id: The user that should be associated with the new checkpoint.
     :param model_class: The class of the new checkpoint.
     :param num_epochs: The number of epochs the new checkpoint will run for.
@@ -198,19 +198,19 @@ def insert_ckpt(ckpt_name: str,
 
     db = get_db()
 
-    new_ckpt_id = None
+    new_checkpoint_id = None
     count = 0
-    while new_ckpt_id is None:
-        temp_name = ckpt_name
+    while new_checkpoint_id is None:
+        temp_name = checkpoint_name
 
         if count != 0:
             temp_name += str(count)
         try:
-            cur = db.execute('INSERT INTO ckpt '
-                             '(ckptName, userId, class, epochs, ensembleSize, trainingSize) '
+            cur = db.execute('INSERT INTO checkpoint '
+                             '(checkpointName, userId, class, epochs, ensembleSize, trainingSize) '
                              'VALUES (?, ?, ?, ?, ?, ?)',
                              [temp_name, user_id, model_class, num_epochs, ensemble_size, training_size])
-            new_ckpt_id = cur.lastrowid
+            new_checkpoint_id = cur.lastrowid
         except sqlite3.IntegrityError as e:
             count += 1
             continue
@@ -218,46 +218,46 @@ def insert_ckpt(ckpt_name: str,
     db.commit()
     cur.close()
 
-    return get_ckpt(new_ckpt_id)
+    return get_checkpoint(new_checkpoint_id)
 
 
-def delete_ckpt(ckpt_id: int):
+def delete_checkpoint(checkpoint_id: int):
     """
     Removes the checkpoint with the specified id from the database,
     associated model columns, and the corresponding files.
 
-    :return Boolean identifying if the selected ckpt was deleted.
+    :return Boolean identifying if the selected checkpoint was deleted.
     """
-    exists = get_ckpt(ckpt_id)
+    exists = get_checkpoint(checkpoint_id)
 
     if not exists:
         return False
 
-    rows = query_db(f'SELECT * FROM model WHERE ckptId = {ckpt_id}')
+    rows = query_db(f'SELECT * FROM model WHERE checkpointId = {checkpoint_id}')
 
     for row in rows:
         os.remove(os.path.join(app.config['CHECKPOINT_FOLDER'], f'{row["id"]}.pt'))
 
     db = get_db()
     cur = db.cursor()
-    db.execute(f'DELETE FROM ckpt WHERE id = {ckpt_id}')
-    db.execute(f'DELETE FROM model WHERE ckptId = {ckpt_id}')
+    db.execute(f'DELETE FROM checkpoint WHERE id = {checkpoint_id}')
+    db.execute(f'DELETE FROM model WHERE checkpointId = {checkpoint_id}')
     db.commit()
     cur.close()
     return True
 
 
-def get_models(ckpt_id: int) -> List[sqlite3.Row]:
+def get_models(checkpoint_id: int) -> List[sqlite3.Row]:
     """
-    Returns the models associated with the given ckpt.
+    Returns the models associated with the given checkpoint.
 
-    :param ckpt_id: The id of the ckpt whose component models are returned.
+    :param checkpoint_id: The id of the checkpoint whose component models are returned.
     :return A list of models.
     """
-    if not ckpt_id:
+    if not checkpoint_id:
         return query_db('SELECT * FROM model')
 
-    return query_db(f'SELECT * FROM model WHERE ckptId = {ckpt_id}')
+    return query_db(f'SELECT * FROM model WHERE checkpointId = {checkpoint_id}')
 
 
 def get_model(model_id: int) -> sqlite3.Row:
@@ -270,19 +270,19 @@ def get_model(model_id: int) -> sqlite3.Row:
     return query_db(f'SELECT * FROM model WHERE id = {model_id}', one = True)
 
 
-def insert_model(ckpt_id: int) -> str:
+def insert_model(checkpoint_id: int) -> str:
     """
     Inserts a new model.
 
-    :param ckpt_id: The id of the checkpoint this model should be associated with.
+    :param checkpoint_id: The id of the checkpoint this model should be associated with.
     :return: The id of the new model.
     """
-    exists = get_ckpt(ckpt_id)
+    exists = get_checkpoint(checkpoint_id)
     if not exists:
         return None
 
     db = get_db()
-    cur = db.execute('INSERT INTO model (ckptId) VALUES (?)', [ckpt_id])
+    cur = db.execute('INSERT INTO model (checkpointId) VALUES (?)', [checkpoint_id])
     new_model_id = cur.lastrowid
     db.commit()
     cur.close()
@@ -317,7 +317,8 @@ def get_dataset(dataset_id: int) -> sqlite3.Row:
 
 def insert_dataset(dataset_name: str, 
                    user_id: str, 
-                   dataset_class: str) -> sqlite3.Row:
+                   dataset_class: str,
+                   dataset_size: int) -> sqlite3.Row:
     """
     Inserts a new dataset. If the desired name is already taken,  
     appends integers incrementally until an open name is found.   
@@ -325,6 +326,7 @@ def insert_dataset(dataset_name: str,
     :param dataset_name: The desired name for the new dataset.
     :param associated_user: The user to be associated with the new dataset.
     :param dataset_class: The class of the new dataset.
+    :param dataset_size: The number of molecules in the dataset.
     :return A tuple containing the id and name of the new dataset.   
     """
     exists = get_user(user_id)
@@ -341,8 +343,8 @@ def insert_dataset(dataset_name: str,
         if count != 0:
             temp_name += str(count)
         try:
-            cur = db.execute('INSERT INTO dataset (datasetName, userId, class) VALUES (?, ?, ?)',
-                             [temp_name, user_id, dataset_class])
+            cur = db.execute('INSERT INTO dataset (datasetName, userId, class, size) VALUES (?, ?, ?, ?)',
+                             [temp_name, user_id, dataset_class, dataset_size])
             new_dataset_id = cur.lastrowid
         except sqlite3.IntegrityError as e:
             count += 1

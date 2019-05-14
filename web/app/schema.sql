@@ -1,5 +1,5 @@
 DROP TABLE IF EXISTS user;
-DROP TABLE IF EXISTS ckpt;
+DROP TABLE IF EXISTS checkpoint;
 DROP TABLE IF EXISTS model;
 DROP TABLE IF EXISTS dataset;
 
@@ -9,9 +9,9 @@ CREATE TABLE user (
   preferences JSON
 );
 
-CREATE TABLE ckpt (
+CREATE TABLE checkpoint (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
-  ckptName TEXT NOT NULL,
+  checkpointName TEXT NOT NULL,
   userId INTEGER NOT NULL,
   created TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
   class TEXT NOT NULL,
@@ -21,13 +21,13 @@ CREATE TABLE ckpt (
   trainingSize INTEGER NOT NULL,
   completed BOOLEAN NOT NULL DEFAULT 0,
   FOREIGN KEY (userId) REFERENCES user (id),
-  CONSTRAINT uqCkptNames UNIQUE(ckptName, userId)
+  CONSTRAINT uqCheckpointNames UNIQUE(checkpointName, userId)
 );
 
 CREATE TABLE model (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
-  ckptId INTEGER NOT NULL,
-  FOREIGN KEY (ckptId) REFERENCES ckpt (id)
+  checkpointId INTEGER NOT NULL,
+  FOREIGN KEY (checkpointId) REFERENCES checkpoint (id)
 );
 
 CREATE TABLE dataset (
@@ -36,6 +36,7 @@ CREATE TABLE dataset (
   userId INTEGER NOT NULL,
   created TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
   class TEXT NOT NULL,
+  size INTEGER NOT NULL,
   FOREIGN KEY (userId) REFERENCES user (id),
   CONSTRAINT uqDatasetNames UNIQUE(datasetName, userId)
 );
