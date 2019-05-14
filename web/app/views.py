@@ -105,6 +105,7 @@ class Users(Resource):
     def post(self):
         """
         Creates a new user in the database.
+
         :return: The newly created user object.
         """
         args = parser.parse_args(strict=True)
@@ -121,9 +122,8 @@ class Users(Resource):
 class User(Resource):
     def get(self, user_id: int):
         """
-
         :param user_id: The id of the user to be returned.
-        :return: A requested user object.
+        :return: The requested user object.
         """
         user = db.get_user(int(user_id))
         if not user:
@@ -131,7 +131,13 @@ class User(Resource):
 
         return row_to_json(user)
     
-    def delete(self, user_id):
+    def delete(self, user_id: int):
+        """
+        Deletes a user from the database.
+
+        :param user_id: The id of the user to be deleted.
+        :return Empty response if deletion was successful.
+        """
         deleted = db.delete_user(user_id)
 
         if not deleted:
@@ -141,11 +147,18 @@ class User(Resource):
 
 class Datasets(Resource):
     def get(self):
+        """
+        :param user_id: The user of interest.
+        :return List of datasets associated with given user id.
+        """
         args = parser.parse_args(strict=True)
         
         return rows_to_json(db.get_datasets(args.userId))
     
     def post(self):
+        """
+        :return The newly created dataset object.
+        """
         args = parser.parse_args(strict=True)
 
         if not args.userId:
@@ -199,11 +212,10 @@ class Datasets(Resource):
 
 
 class Dataset(Resource):
-    def get(self, dataset_id):
+    def get(self, dataset_id: int):
         """
-        Downloads a dataset as a .csv file.
-
-        :param dataset: The id of the dataset to download.
+        :param dataset_id: The id of the dataset to be returned.
+        :return: The requested dataset object.
         """
         dataset = db.get_dataset(int(dataset_id))
         if not dataset:
@@ -211,11 +223,12 @@ class Dataset(Resource):
 
         return row_to_json(dataset)
     
-    def delete(self, dataset_id):
+    def delete(self, dataset_id: int):
         """
-        Deletes a dataset.
+        Deletes a dataset from the database, along with associated files.
 
-        :param dataset_id: The id of the dataset to delete.
+        :param dataset_id: The id of the dataset to be deleted.
+        :return Empty response if deletion was successful.
         """
         deleted = db.delete_dataset(dataset_id)
 
@@ -227,11 +240,12 @@ class Dataset(Resource):
 
 
 class DatasetFile(Resource):
-    def get(self, dataset_id):
+    def get(self, dataset_id: int):
         """
-        Downloads a dataset as a .csv file.
+        Downloads a dataset.
 
         :param dataset_id: The id of the dataset to download.
+        :return A csv file.
         """
         dataset = db.get_dataset(dataset_id)
 
@@ -249,11 +263,18 @@ class DatasetFile(Resource):
 
 class Checkpoints(Resource):
     def get(self):
+        """
+        :param user_id: The user of interest.
+        :return List of checkpoints associated with given user id.
+        """
         args = parser.parse_args(strict=True)
 
         return rows_to_json(db.get_checkpoints(args.userId))        
 
     def post(self):
+        """
+        :return The newly created checkpoint object.
+        """
         args = parser.parse_args(strict=True)
 
         if not args.userId:
@@ -300,14 +321,24 @@ class Checkpoints(Resource):
 
 
 class Checkpoint(Resource):
-    def get(self, checkpoint_id):
+    def get(self, checkpoint_id: int):
+        """
+        :param checkpoint_id: The id of the dataset to be returned.
+        :return: The requested checkpoint object.
+        """
         checkpoint = db.get_checkpoint(int(checkpoint_id))
         if not checkpoint:
             return render_error(404, "Checkpoint with specified checkpointId not found.")
 
         return row_to_json(checkpoint)  
 
-    def delete(self, checkpoint_id):
+    def delete(self, checkpoint_id: int):
+        """
+        Deletes a checkpoint from the database, along with associated files.
+
+        :param checkpoint_id: The id of the checkpoint to be deleted.
+        :return Empty response if deletion was successful.
+        """
         deleted = db.delete_checkpoint(checkpoint_id)
 
         if not deleted:
@@ -317,7 +348,13 @@ class Checkpoint(Resource):
 
 
 class CheckpointFile(Resource):
-    def get(self, checkpoint_id):
+    def get(self, checkpoint_id: int):
+        """
+        Downloads a checkpoint.
+
+        :param checkpoint_id: The id of the checkpoint to download.
+        :return A csv file.
+        """
         checkpoint = db.get_checkpoint(checkpoint_id)
 
         if not checkpoint:
@@ -345,6 +382,11 @@ class CheckpointFile(Resource):
 
 class Train(Resource):
     def post(self):
+        """
+        Trains a checkpoint.
+
+        :return The newly created checkpoint object.
+        """
         args = parser.parse_args(strict=True)
 
         if not args.userId:
@@ -425,6 +467,11 @@ class Train(Resource):
 
 class Predict(Resource):
     def post(self):
+        """
+        Used a checkpoint to predict on a list/file of smiles.
+
+        :return A list of predictions generated by the checkpoint.
+        """
         args = parser.parse_args(strict=True)
 
         if not args.checkpointId:
