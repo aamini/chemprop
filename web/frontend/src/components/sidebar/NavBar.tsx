@@ -23,31 +23,31 @@ export class NavBar extends Component {
                     style={{ float: 'right' }}
                 >
                     <Item style={{paddingTop: 8, paddingBottom: 8}}>
-                        <a href="#">
+                        <a href="/">
                             <Icon type="flag" />
                             Checkpoints
                         </a>
                     </Item>
                     <Item style={{paddingTop: 8, paddingBottom: 8}}>
-                        <a href="#">
+                        <a href="/">
                             <Icon type="database" />
                             Datasets
                         </a>
                     </Item>
                     <Item style={{paddingTop: 8, paddingBottom: 8}}>
-                        <a href="#">
+                        <a href="/">
                             <Icon type="rise" />
                             Train
                         </a>
                     </Item>
                     <Item style={{paddingTop: 8, paddingBottom: 8}}>
-                        <a href="#">
+                        <a href="/">
                             <Icon type="eye" />
                             Predict
                         </a>
                     </Item>
                     <Item style={{paddingTop: 8, paddingBottom: 8}}>
-                        <a href="#">
+                        <a href="/">
                             <Icon type="user" />
                             Users
                         </a>
