@@ -14,39 +14,39 @@ export class NavBar extends Component {
                 style={{
                     padding: 0,
                     backgroundColor: '#fff',
-                    boxShadow: '5px'
+                    boxShadow: '8px 0px 4px #ccc'
                 }}
             >
                 <TitleLink />
                 <Menu
                     mode="horizontal"
-                    style={{ marginTop: '10', float: 'right' }}
+                    style={{ float: 'right' }}
                 >
-                    <Item>
+                    <Item style={{paddingTop: 8, paddingBottom: 8}}>
                         <a href="#">
                             <Icon type="flag" />
                             Checkpoints
                         </a>
                     </Item>
-                    <Item>
+                    <Item style={{paddingTop: 8, paddingBottom: 8}}>
                         <a href="#">
                             <Icon type="database" />
                             Datasets
                         </a>
                     </Item>
-                    <Item>
+                    <Item style={{paddingTop: 8, paddingBottom: 8}}>
                         <a href="#">
                             <Icon type="rise" />
                             Train
                         </a>
                     </Item>
-                    <Item>
+                    <Item style={{paddingTop: 8, paddingBottom: 8}}>
                         <a href="#">
                             <Icon type="eye" />
                             Predict
                         </a>
                     </Item>
-                    <Item>
+                    <Item style={{paddingTop: 8, paddingBottom: 8}}>
                         <a href="#">
                             <Icon type="user" />
                             Users
