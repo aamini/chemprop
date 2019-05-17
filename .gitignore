@@ -4,5 +4,4 @@
 *.vscode
 *.csv
 *.pt
-*.json
 *.sqlite3
