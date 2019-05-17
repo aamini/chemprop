@@ -42,7 +42,7 @@ def compare_datasets_tsne(smiles_path_1: str, smiles_path_2: str, save_path: str
     plt.figure(figsize=(6.4 * 10, 4.8 * 10))
 
     for i, (x, color) in enumerate(zip(X, colors)):
-        if i == su3327_indexc:
+        if i == su3327_index:
             plt.plot(x[0], x[1], marker='*', markersize=80, color='green')
         else:
             plt.plot(x[0], x[1], marker='o', markersize=10, color=color)
