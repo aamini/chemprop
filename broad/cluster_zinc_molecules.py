@@ -36,7 +36,7 @@ def plot_kmeans_with_tsne(X: np.ndarray,
         color = plt.cm.rainbow(cluster_labels[i] / num_clusters)
 
         if display_type == 'points':
-            plt.plot(X[i, 0], X[i, 1], marker='o', markersize=40, color=color)
+            plt.plot(X[i, 0], X[i, 1], marker='o', markersize=120, color=color)
         else:
             plt.text(X[i, 0], X[i, 1], str(cluster_labels[i]),
                      color=color, fontdict={'weight': 'bold', 'size': 80})
@@ -61,7 +61,7 @@ def plot_kmeans_with_tsne(X: np.ndarray,
                      bbox=dict(boxstyle="square",
                                edgecolor=edgecolor,
                                facecolor=facecolor),
-                     fontdict={'weight': 'bold', 'size': 160})
+                     fontdict={'weight': 'bold', 'size': 480})
 
     # Otherwise show images of molecules
     elif hasattr(offsetbox, 'AnnotationBbox'):
@@ -144,7 +144,7 @@ def cluster_zinc_molecules(data_path: str,
         mol = Chem.MolFromSmiles(top_datapoint['smiles'])
         Draw.MolToFile(mol, os.path.join(cluster_dir, f'cluster_{cluster}_top_{top_datapoint["zinc_index"]}.png'))
 
-        # Find molecule neareest to cluster center
+        # Find molecule nearest to cluster center
         center_datapoint, center_distance = None, float('inf')
         for datapoint in cluster_data:
             distance = np.linalg.norm(cluster_center - datapoint['morgan'])
