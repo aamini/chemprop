@@ -15,7 +15,7 @@ from chemprop.features import get_features_generator
 from chemprop.utils import makedirs
 
 
-COLORS = ['blue', 'red', 'green', 'orange']
+COLORS = ['blue', 'red', 'green', 'cyan']
 su3327_smiles = 'Nc1nnc(Sc2ncc(s2)[N+]([O-])=O)s1'
 
 
@@ -78,10 +78,11 @@ def compare_datasets_tsne(smiles_paths: List[str], highlight_paths: List[str], s
         plt.figure(figsize=(6.4 * 10, 4.8 * 10))
 
         for smile, x, color in zip(smiles, X, colors):
+            if smile not in highlight_smiles:
+                plt.plot(x[0], x[1], marker='o', markersize=20, color=color)
+        for smile, x, color in zip(smiles, X, colors):
             if smile in highlight_smiles:
                 plt.plot(x[0], x[1], marker='*', markersize=40, color='gold')
-            else:
-                plt.plot(x[0], x[1], marker='o', markersize=20, color=color)
 
         plt.xticks([]), plt.yticks([])
 
