@@ -401,7 +401,7 @@ def mol2graph(smiles_batch: List[str],
             # Context prediction subgraph extraction for node-level pretraining
             if args.dataset_type == 'pretraining':
                 subgraphs = extract_substructure_and_context_subgraphs(smiles, mol_graph, args)
-                mol_graphs = sum(subgraphs, [])  # [substructure_1, context_1, substructure_2, context_2, ...]
+                mol_graphs = list(sum(subgraphs, tuple()))  # [substructure_1, context_1, substructure_2, context_2, ...]
             else:
                 mol_graphs = [mol_graph]
 
@@ -410,5 +410,5 @@ def mol2graph(smiles_batch: List[str],
 
         all_mol_graphs += mol_graphs
         mol_scope += [i] * len(mol_graphs)
-    
+
     return BatchMolGraph(all_mol_graphs, args, mol_scope)

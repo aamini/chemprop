@@ -31,7 +31,7 @@ class MoleculeModel(nn.Module):
 
         :param args: Arguments.
         """
-        self.encoder = MPN(args)
+        self.encoder = MPN(args, graph_input=args.dataset_type == 'pretraining')
 
     def create_ffn(self, args: Namespace):
         """
@@ -39,9 +39,14 @@ class MoleculeModel(nn.Module):
 
         :param args: Arguments.
         """
+        if args.dataset_type == 'pretraining':
+            self.ffn = lambda x: x
+            return
+
         self.multiclass = args.dataset_type == 'multiclass'
         if self.multiclass:
             self.num_classes = args.multiclass_num_classes
+
         if args.features_only:
             first_linear_dim = args.features_size
         else:
@@ -91,9 +96,9 @@ class MoleculeModel(nn.Module):
         if self.classification and not self.training:
             output = self.sigmoid(output)
         if self.multiclass:
-            output = output.reshape((output.size(0), -1, self.num_classes)) # batch size x num targets x num classes per target
+            output = output.reshape((output.size(0), -1, self.num_classes))  # batch size x num targets x num classes per target
             if not self.training:
-                output = self.multiclass_softmax(output) # to get probabilities during evaluation, but not during training as we're using CrossEntropyLoss
+                output = self.multiclass_softmax(output)  # to get probabilities during evaluation, but not during training as we're using CrossEntropyLoss
 
         return output
 

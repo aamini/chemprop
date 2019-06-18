@@ -138,6 +138,9 @@ def add_train_args(parser: ArgumentParser):
                         help='Inner radius for the context during node-level context prediction pretraining')
     parser.add_argument('--outer_context_radius', type=int, default=6,
                         help='Outer radius for the context during node-level context prediction pretraining')
+    parser.add_argument('--num_negatives_per_positive', type=int, default=1,
+                        help='Number of negative substructure-context pairs for each positive pair'
+                             'during node-level context prediction pretraining')
 
     # Training arguments
     parser.add_argument('--epochs', type=int, default=30,

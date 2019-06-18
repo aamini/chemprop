@@ -2,6 +2,7 @@ from argparse import Namespace
 import logging
 from typing import Callable, List, Union
 
+import numpy as np
 from tensorboardX import SummaryWriter
 import torch
 import torch.nn as nn
@@ -10,6 +11,7 @@ from torch.optim.lr_scheduler import _LRScheduler
 from tqdm import trange
 
 from chemprop.data import MoleculeDataset
+from chemprop.features import mol2graph
 from chemprop.nn_utils import compute_gnorm, compute_pnorm, NoamLR
 
 
@@ -58,23 +60,62 @@ def train(model: nn.Module,
         mask = torch.Tensor([[x is not None for x in tb] for tb in target_batch])
         targets = torch.Tensor([[0 if x is None else x for x in tb] for tb in target_batch])
 
-        if next(model.parameters()).is_cuda:
-            mask, targets = mask.cuda(), targets.cuda()
+        # If pretraining, convert smiles to BatchMolGraph before model
+        if args.dataset_type == 'pretraining':
+            # Convert smiles to subgraphs
+            batch = mol2graph(batch, args)
+
+            # Extract molecule scope
+            mol_scope = np.array([batch.mol_scope[i] for i in range(0, len(batch.mol_scope), 2)])
+
+            # Define targets
+            targets = torch.FloatTensor([[1]] * len(mol_scope) + [[0]] * len(mol_scope) * args.num_negatives_per_positive)
+
+            # Define mask
+            mask = torch.ones(targets.shape)
 
         class_weights = torch.ones(targets.shape)
 
-        if args.cuda:
-            class_weights = class_weights.cuda()
+        if next(model.parameters()).is_cuda:
+            mask, targets, class_weights = mask.cuda(), targets.cuda(), class_weights.cuda()
 
         # Run model
         model.zero_grad()
         preds = model(batch, features_batch)
+
+        # If pretraining, select substructure/context pairs
+        if args.dataset_type == 'pretraining':
+            # Extract substructure vecs and molecule ids
+            substructure_vecs = preds[torch.arange(0, len(preds), 2)]
+
+            # Extract context vecs and molecule ids
+            context_vecs = preds[torch.arange(1, len(preds), 2)]
+
+            # Check lengths
+            assert len(mol_scope) == len(substructure_vecs) == len(context_vecs)
+
+            if args.cuda:
+                targets = targets.cuda()
+
+            # Sample negative substructure/context pairs
+            substructure_vecs = substructure_vecs.repeat(1 + args.num_negatives_per_positive, 1)
+
+            # TODO: make this more efficient
+            for _ in range(args.num_negatives_per_positive):
+                for mol_index in mol_scope:
+                    negative_indices = np.where(mol_scope != mol_index)[0]
+                    negative_index = np.random.choice(negative_indices)
+                    context_vecs = torch.cat((context_vecs, context_vecs[negative_index].unsqueeze(dim=0)), dim=0)
+
+            # Dot product comparison
+            preds = torch.bmm(substructure_vecs.unsqueeze(dim=1), context_vecs.unsqueeze(dim=2)).squeeze(dim=2)
 
         if args.dataset_type == 'multiclass':
             targets = targets.long()
             loss = torch.cat([loss_func(preds[:, target_index, :], targets[:, target_index]).unsqueeze(1) for target_index in range(preds.size(1))], dim=1) * class_weights * mask
         else:
             loss = loss_func(preds, targets) * class_weights * mask
+
         loss = loss.sum() / mask.sum()
 
         loss_sum += loss.item()
