@@ -80,7 +80,7 @@ def add_train_args(parser: ArgumentParser):
     parser.add_argument('--checkpoint_path', type=str, default=None,
                         help='Path to model checkpoint (.pt file)')
     parser.add_argument('--dataset_type', type=str,
-                        choices=['classification', 'regression', 'multiclass'],
+                        choices=['classification', 'regression', 'multiclass', 'pretraining'],
                         help='Type of dataset, e.g. classification or regression.'
                              'This determines the loss function used during training.')
     parser.add_argument('--multiclass_num_classes', type=int, default=3,
@@ -134,6 +134,10 @@ def add_train_args(parser: ArgumentParser):
     parser.add_argument('--config_path', type=str,
                         help='Path to a .json file containing arguments. Any arguments present in the config'
                              'file will override arguments specified via the command line or by the defaults.')
+    parser.add_argument('--inner_context_radius', type=int, default=3,
+                        help='Inner radius for the context during node-level context prediction pretraining')
+    parser.add_argument('--outer_context_radius', type=int, default=6,
+                        help='Outer radius for the context during node-level context prediction pretraining')
 
     # Training arguments
     parser.add_argument('--epochs', type=int, default=30,

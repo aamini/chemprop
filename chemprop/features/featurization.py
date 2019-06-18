@@ -1,6 +1,8 @@
 from argparse import Namespace
-from typing import List, Tuple, Union
+from copy import deepcopy
+from typing import List, Set, Tuple, Union
 
+import numpy as np
 from rdkit import Chem
 import torch
 
@@ -210,7 +212,7 @@ class BatchMolGraph:
     - a2a: (Optional): A mapping from an atom index to neighboring atom indices.
     """
 
-    def __init__(self, mol_graphs: List[MolGraph], args: Namespace):
+    def __init__(self, mol_graphs: List[MolGraph], args: Namespace, mol_scope: List[int] = None):
         self.smiles_batch = [mol_graph.smiles for mol_graph in mol_graphs]
         self.n_mols = len(self.smiles_batch)
 
@@ -222,6 +224,7 @@ class BatchMolGraph:
         self.n_bonds = 1  # number of bonds (start at 1 b/c need index 0 as padding)
         self.a_scope = []  # list of tuples indicating (start_atom_index, num_atoms) for each molecule
         self.b_scope = []  # list of tuples indicating (start_bond_index, num_bonds) for each molecule
+        self.mol_scope = mol_scope  # list of indices of length equal to n_mols indicating the molecule each substructure belongs to (for context prediction pretraining)
 
         # All start with zero padding so that indexing with zero padding returns zeros
         f_atoms = [[0] * self.atom_fdim]  # atom features
@@ -245,7 +248,7 @@ class BatchMolGraph:
             self.n_atoms += mol_graph.n_atoms
             self.n_bonds += mol_graph.n_bonds
 
-        self.max_num_bonds = max(1, max(len(in_bonds) for in_bonds in a2b)) # max with 1 to fix a crash in rare case of all single-heavy-atom mols
+        self.max_num_bonds = max(1, max(len(in_bonds) for in_bonds in a2b))  # max with 1 to fix a crash in rare case of all single-heavy-atom mols
 
         self.f_atoms = torch.FloatTensor(f_atoms)
         self.f_bonds = torch.FloatTensor(f_bonds)
@@ -297,6 +300,89 @@ class BatchMolGraph:
         return self.a2a
 
 
+def extract_subgraph(atoms: Set[int],
+                     bond_to_atom_pair: List[Tuple[int, int]],
+                     mol_graph: MolGraph) -> MolGraph:
+    """
+    Extracts thee subgraph of a MolGraph containing the provided atoms.
+    
+    :param atoms: A set of atom indices which will be used to extract a subgraph.
+    :param bond_to_atom_pair: A mapping from bond indices to pairs of atom indices (a1 --> a2).
+    :param mol_graph: A MolGraph for a molecule.
+    :return: A subgraph MolGraph containing all the provided atom indices.
+    """
+    # Copy MolGraph in order to edit it
+    subgraph = deepcopy(mol_graph)
+
+    # Determine bonds in subgraph
+    bonds = {b for b, (a1, a2) in enumerate(bond_to_atom_pair) if a1 in atoms and a2 in atoms}
+
+    # Convert atoms and bonds to sorted numpy arrays
+    atoms, bonds = np.array(sorted(atoms)), np.array(sorted(bonds))
+
+    # Determine mapping from old indices to new indices
+    a2a = {old_a: new_a for new_a, old_a in enumerate(atoms)}
+    b2b = {old_b: new_b for new_b, old_b in enumerate(bonds)}
+    a2a_fn = np.vectorize(lambda a: a2a[a])
+    b2b_fn = np.vectorize(lambda b: b2b[b])
+
+    # Extract sub-tensors
+    subgraph.n_atoms = len(atoms)
+    subgraph.n_bonds = len(bonds)
+    subgraph.f_atoms = np.array(subgraph.f_atoms)[atoms].tolist()
+    subgraph.f_bonds = np.array(subgraph.f_bonds)[bonds].tolist()
+    subgraph.a2b = a2a_fn(np.array(subgraph.a2b)[atoms]).tolist()
+    subgraph.b2a = b2b_fn(np.array(subgraph.b2a)[bonds]).tolist()
+    subgraph.b2revb = b2b_fn(np.array(subgraph.b2revb)[bonds]).tolist()
+
+    return subgraph
+
+
+def exract_substructure_and_context_subgraphs(smiles: str,
+                                              mol_graph: MolGraph,
+                                              args: Namespace) -> List[Tuple[MolGraph, MolGraph]]:
+    """
+    Extracts substructure and context subgraphs for pretraining.
+
+    :param smiles: SMILES string for the molecule.
+    :param mol_graph: A MolGraph containing the features and connectivity of the molecule.
+    :param args: Arguments.
+    :return: A list of of tuples of (substructure, context) subgraphs for each atom on the molecule.
+    """
+    subgraphs = []
+
+    # Get distances between atoms
+    mol = Chem.MolFromSmiles(smiles)
+    distances = Chem.GetDistanceMatrix(mol)  # num_atoms x num_atoms
+
+    # Get mapping from bond index to atoms the bond connects
+    bond_to_atom_pair = []
+    for a1 in range(mol.GetNumAtoms()):
+        for a2 in range(a1 + 1, mol.GetNumAtoms()):
+            bond = mol.GetBondBetweenAtoms(a1, a2)
+
+            if bond is None:
+                continue
+
+            bond_to_atom_pair.append((a1, a2))  # a1 --> a2
+            bond_to_atom_pair.append((a2, a1))  # a2 --> a1
+
+    # Note: Assumes MolGraph indexed the atoms and bonds in the same way
+    for a in mol.GetNumAtoms():
+        # Substructure subgraph (distance <= r1)
+        substructure_atoms = set(np.where(distances[a] <= args.inner_context_radius)[0])
+        substructure_graph = extract_subgraph(substructure_atoms, bond_to_atom_pair, mol_graph)
+
+        # Context subgraph (r1 <= distance <= r2)
+        context_atoms = set(np.where(np.logical_and(distances[a] >= args.inner_context_radius, distances[a] <= args.outer_context_radius))[0])
+        context_graph = extract_subgraph(context_atoms, bond_to_atom_pair, mol_graph)
+
+        # Add subgraphs
+        subgraphs.append((substructure_graph, context_graph))
+        
+    return subgraphs
+
+
 def mol2graph(smiles_batch: List[str],
               args: Namespace) -> BatchMolGraph:
     """
@@ -306,14 +392,25 @@ def mol2graph(smiles_batch: List[str],
     :param args: Arguments.
     :return: A BatchMolGraph containing the combined molecular graph for the molecules
     """
-    mol_graphs = []
-    for smiles in smiles_batch:
+    all_mol_graphs, mol_scope = [], []
+
+    for i, smiles in enumerate(smiles_batch):
         if smiles in SMILES_TO_GRAPH:
-            mol_graph = SMILES_TO_GRAPH[smiles]
+            mol_graphs = SMILES_TO_GRAPH[smiles]
         else:
             mol_graph = MolGraph(smiles, args)
+
+            # Context prediction subgraph extraction for node-level pretraining
+            if args.dataset_type == 'pretraining':
+                subgraphs = exract_substructure_and_context_subgraphs(smiles, mol_graph, args)
+                mol_graphs = sum(subgraphs, [])  # [substructure_1, context_1, substructure_2, context_2, ...]
+            else:
+                mol_graphs = [mol_graph]
+
             if not args.no_cache:
-                SMILES_TO_GRAPH[smiles] = mol_graph
-        mol_graphs.append(mol_graph)
+                SMILES_TO_GRAPH[smiles] = mol_graphs
+
+        all_mol_graphs += mol_graphs
+        mol_scope += [i] * len(mol_graphs)
     
-    return BatchMolGraph(mol_graphs, args)
+    return BatchMolGraph(all_mol_graphs, args, mol_scope)
