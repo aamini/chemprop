@@ -159,7 +159,7 @@ def get_loss_func(args: Namespace) -> nn.Module:
     :param args: Namespace containing the dataset type ("classification" or "regression").
     :return: A PyTorch loss function.
     """
-    if args.dataset_type == 'classification':
+    if args.dataset_type in ['classification', 'pretraining']:
         return nn.BCEWithLogitsLoss(reduction='none')
 
     if args.dataset_type == 'regression':

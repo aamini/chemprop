@@ -269,14 +269,14 @@ def modify_train_args(args: Namespace):
     del args.no_features_scaling
 
     if args.metric is None:
-        if args.dataset_type == 'classification':
+        if args.dataset_type in ['classification', 'pretraining']:
             args.metric = 'auc'
         elif args.dataset_type == 'multiclass':
             args.metric = 'cross_entropy'
         else:
             args.metric = 'rmse'
 
-    if not ((args.dataset_type == 'classification' and args.metric in ['auc', 'prc-auc', 'accuracy']) or
+    if not ((args.dataset_type in ['classification', 'pretraining'] and args.metric in ['auc', 'prc-auc', 'accuracy']) or
             (args.dataset_type == 'regression' and args.metric in ['rmse', 'mae', 'r2']) or
             (args.dataset_type == 'multiclass' and args.metric in ['cross_entropy', 'accuracy'])):
         raise ValueError(f'Metric "{args.metric}" invalid for dataset type "{args.dataset_type}".')

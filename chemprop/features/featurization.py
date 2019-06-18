@@ -304,7 +304,7 @@ def extract_subgraph(atoms: Set[int],
                      bond_to_atom_pair: List[Tuple[int, int]],
                      mol_graph: MolGraph) -> MolGraph:
     """
-    Extracts thee subgraph of a MolGraph containing the provided atoms.
+    Extracts the subgraph of a MolGraph containing the provided atoms.
     
     :param atoms: A set of atom indices which will be used to extract a subgraph.
     :param bond_to_atom_pair: A mapping from bond indices to pairs of atom indices (a1 --> a2).
@@ -317,30 +317,28 @@ def extract_subgraph(atoms: Set[int],
     # Determine bonds in subgraph
     bonds = {b for b, (a1, a2) in enumerate(bond_to_atom_pair) if a1 in atoms and a2 in atoms}
 
-    # Convert atoms and bonds to sorted numpy arrays
-    atoms, bonds = np.array(sorted(atoms)), np.array(sorted(bonds))
+    # Convert atoms and bonds to sorted lists
+    atom_list, bond_list = sorted(atoms), sorted(bonds)
 
     # Determine mapping from old indices to new indices
-    a2a = {old_a: new_a for new_a, old_a in enumerate(atoms)}
-    b2b = {old_b: new_b for new_b, old_b in enumerate(bonds)}
-    a2a_fn = np.vectorize(lambda a: a2a[a])
-    b2b_fn = np.vectorize(lambda b: b2b[b])
+    a2a = {old_a: new_a for new_a, old_a in enumerate(atom_list)}
+    b2b = {old_b: new_b for new_b, old_b in enumerate(bond_list)}
 
     # Extract sub-tensors
     subgraph.n_atoms = len(atoms)
     subgraph.n_bonds = len(bonds)
-    subgraph.f_atoms = np.array(subgraph.f_atoms)[atoms].tolist()
-    subgraph.f_bonds = np.array(subgraph.f_bonds)[bonds].tolist()
-    subgraph.a2b = a2a_fn(np.array(subgraph.a2b)[atoms]).tolist()
-    subgraph.b2a = b2b_fn(np.array(subgraph.b2a)[bonds]).tolist()
-    subgraph.b2revb = b2b_fn(np.array(subgraph.b2revb)[bonds]).tolist()
+    subgraph.f_atoms = [subgraph.f_atoms[a] for a in atom_list]
+    subgraph.f_bonds = [subgraph.f_bonds[b] for b in bond_list]
+    subgraph.a2b = [[b2b[b] for b in subgraph.a2b[a] if b in bonds] for a in atom_list]
+    subgraph.b2a = [a2a[subgraph.b2a[b]] for b in bond_list]
+    subgraph.b2revb = [b2b[subgraph.b2revb[b]] for b in bond_list]
 
     return subgraph
 
 
-def exract_substructure_and_context_subgraphs(smiles: str,
-                                              mol_graph: MolGraph,
-                                              args: Namespace) -> List[Tuple[MolGraph, MolGraph]]:
+def extract_substructure_and_context_subgraphs(smiles: str,
+                                               mol_graph: MolGraph,
+                                               args: Namespace) -> List[Tuple[MolGraph, MolGraph]]:
     """
     Extracts substructure and context subgraphs for pretraining.
 
@@ -368,7 +366,7 @@ def exract_substructure_and_context_subgraphs(smiles: str,
             bond_to_atom_pair.append((a2, a1))  # a2 --> a1
 
     # Note: Assumes MolGraph indexed the atoms and bonds in the same way
-    for a in mol.GetNumAtoms():
+    for a in range(mol.GetNumAtoms()):
         # Substructure subgraph (distance <= r1)
         substructure_atoms = set(np.where(distances[a] <= args.inner_context_radius)[0])
         substructure_graph = extract_subgraph(substructure_atoms, bond_to_atom_pair, mol_graph)
@@ -402,7 +400,7 @@ def mol2graph(smiles_batch: List[str],
 
             # Context prediction subgraph extraction for node-level pretraining
             if args.dataset_type == 'pretraining':
-                subgraphs = exract_substructure_and_context_subgraphs(smiles, mol_graph, args)
+                subgraphs = extract_substructure_and_context_subgraphs(smiles, mol_graph, args)
                 mol_graphs = sum(subgraphs, [])  # [substructure_1, context_1, substructure_2, context_2, ...]
             else:
                 mol_graphs = [mol_graph]
