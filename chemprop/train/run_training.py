@@ -600,7 +600,7 @@ def confidence_visualizations(args: Namespace,
                               targets: List[Union[float, int]] = [],
                               confidence: List[Union[float, int]] = [],
                               accuracy_sublog = None):
-    error = np.abs(predictions - targets)
+    error = list(np.abs(predictions - targets))
     sets_by_confidence = sorted(
         list(zip(confidence, error, predictions, targets)), key=lambda pair: pair[0])
     sets_by_error = sorted(list(zip(confidence, error, predictions, targets)),
