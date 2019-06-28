@@ -196,7 +196,8 @@ def run_training(args: Namespace, logger: Logger = None) -> List[float]:
                 batch_size=args.batch_size,
                 dataset_type=args.dataset_type,
                 scaler=scaler,
-                logger=logger
+                logger=logger,
+                args=args
             )
 
             # Average validation score
@@ -224,7 +225,8 @@ def run_training(args: Namespace, logger: Logger = None) -> List[float]:
             model=model,
             data=test_data,
             batch_size=args.batch_size,
-            scaler=scaler
+            scaler=scaler,
+            args=args
         )
         test_scores = evaluate_predictions(
             preds=test_preds,

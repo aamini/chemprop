@@ -236,7 +236,7 @@ class BatchMolGraph:
     - a2a: (Optional): A mapping from an atom index to neighboring atom indices.
     """
 
-    def __init__(self, mol_graphs: List[MolGraph], args: Namespace, mol_scope: List[int] = None):
+    def __init__(self, mol_graphs: List[MolGraph], args: Namespace):
         self.atom_fdim = get_atom_fdim(args)
         self.bond_fdim = get_bond_fdim(args) + (not args.atom_messages) * self.atom_fdim
 
@@ -245,7 +245,6 @@ class BatchMolGraph:
         self.n_bonds = 1  # number of bonds (start at 1 b/c need index 0 as padding)
         self.a_scope = []  # list of tuples indicating (start_atom_index, num_atoms) for each molecule
         self.b_scope = []  # list of tuples indicating (start_bond_index, num_bonds) for each molecule
-        self.mol_scope = mol_scope  # list of indices of length equal to n_mols indicating the molecule each substructure belongs to (for context prediction pretraining)
 
         # All start with zero padding so that indexing with zero padding returns zeros
         f_atoms = [[0] * self.atom_fdim]  # atom features
@@ -410,7 +409,7 @@ def mol2graph(smiles_batch: List[str],
     :param args: Arguments.
     :return: A BatchMolGraph containing the combined molecular graph for the molecules
     """
-    all_mol_graphs, mol_scope = [], []
+    all_mol_graphs = []
 
     for i, smiles in enumerate(smiles_batch):
         if smiles in SMILES_TO_GRAPH:
@@ -429,6 +428,5 @@ def mol2graph(smiles_batch: List[str],
                 SMILES_TO_GRAPH[smiles] = mol_graphs
 
         all_mol_graphs += mol_graphs
-        mol_scope += [i] * len(mol_graphs)
 
-    return BatchMolGraph(all_mol_graphs, args, mol_scope)
+    return BatchMolGraph(all_mol_graphs, args)

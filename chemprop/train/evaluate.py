@@ -1,3 +1,4 @@
+from argparse import Namespace
 import logging
 from typing import Callable, List
 
@@ -71,7 +72,8 @@ def evaluate(model: nn.Module,
              batch_size: int,
              dataset_type: str,
              scaler: StandardScaler = None,
-             logger: logging.Logger = None) -> List[float]:
+             logger: logging.Logger = None,
+             args: Namespace = None) -> List[float]:
     """
     Evaluates an ensemble of models on a dataset.
 
@@ -83,13 +85,15 @@ def evaluate(model: nn.Module,
     :param dataset_type: Dataset type.
     :param scaler: A StandardScaler object fit on the training targets.
     :param logger: Logger.
+    :param args: Arguments.
     :return: A list with the score for each task based on `metric_func`.
     """
     preds = predict(
         model=model,
         data=data,
         batch_size=batch_size,
-        scaler=scaler
+        scaler=scaler,
+        args=args
     )
 
     targets = data.targets()

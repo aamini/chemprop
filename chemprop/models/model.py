@@ -31,7 +31,7 @@ class MoleculeModel(nn.Module):
 
         :param args: Arguments.
         """
-        self.encoder = MPN(args, graph_input=args.dataset_type == 'pretraining')
+        self.encoder = MPN(args)
 
     def create_ffn(self, args: Namespace):
         """

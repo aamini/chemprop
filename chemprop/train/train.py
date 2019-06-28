@@ -60,20 +60,6 @@ def train(model: nn.Module,
         mask = torch.Tensor([[x is not None for x in tb] for tb in target_batch])
         targets = torch.Tensor([[0 if x is None else x for x in tb] for tb in target_batch])
 
-        # If pretraining, convert smiles to BatchMolGraph before model
-        if args.dataset_type == 'pretraining':
-            # Convert smiles to subgraphs
-            batch = mol2graph(batch, args)
-
-            # Extract molecule scope
-            mol_scope = np.array([batch.mol_scope[i] for i in range(0, len(batch.mol_scope), 2)])
-
-            # Define targets
-            targets = torch.FloatTensor([[1]] * len(mol_scope) + [[0]] * len(mol_scope) * args.num_negatives_per_positive)
-
-            # Define mask
-            mask = torch.ones(targets.shape)
-
         class_weights = torch.ones(targets.shape)
 
         if next(model.parameters()).is_cuda:
@@ -91,11 +77,11 @@ def train(model: nn.Module,
             # Extract context vecs and molecule ids
             context_vecs = preds[torch.arange(1, len(preds), 2)]
 
+            # Get molecule index for each substructure/context
+            mol_scope = mol_batch.mol_scope()
+
             # Check lengths
             assert len(mol_scope) == len(substructure_vecs) == len(context_vecs)
-
-            if args.cuda:
-                targets = targets.cuda()
 
             # Sample negative substructure/context pairs
             substructure_vecs = substructure_vecs.repeat(1 + args.num_negatives_per_positive, 1)

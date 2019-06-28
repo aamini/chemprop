@@ -45,6 +45,7 @@ class MoleculeDatapoint:
 
         self.smiles = line[0]  # str
         self.mol = Chem.MolFromSmiles(self.smiles)
+        self.n_atoms = self.mol.GetNumAtoms()
 
         # Generate additional features if given a generator
         if self.features_generator is not None:
@@ -102,6 +103,7 @@ class MoleculeDataset(Dataset):
         self.data = data
         self.args = self.data[0].args if len(self.data) > 0 else None
         self.scaler = None
+        self.n_atoms = sum(d.n_atoms for d in self.data)
 
     def compound_names(self) -> List[str]:
         """
@@ -147,7 +149,18 @@ class MoleculeDataset(Dataset):
 
         :return: A list of lists of floats containing the targets.
         """
+        if self.args is not None and self.args.dataset_type == 'pretraining':
+            return [[1]] * self.n_atoms + [[0]] * self.n_atoms * self.args.num_negatives_per_positive
+
         return [d.targets for d in self.data]
+
+    def mol_scope(self) -> List[int]:
+        """
+        Returns the molecule index for each atom in the MoleculeDataset.
+
+        :return: A list of ints representing the index of the molecule each atom belongs to.
+        """
+        return [i for i, d in enumerate(self.data) for _ in range(d.n_atoms)]
 
     def num_tasks(self) -> int:
         """
