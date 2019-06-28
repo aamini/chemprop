@@ -123,53 +123,67 @@ def bond_features(bond: Chem.rdchem.Bond) -> List[Union[bool, int, float]]:
 
 
 class MolGraph:
-    """
-    A MolGraph represents the graph structure and featurization of a single molecule.
-
-    A MolGraph computes the following attributes:
-    - smiles: Smiles string.
-    - n_atoms: The number of atoms in the molecule.
-    - n_bonds: The number of bonds in the molecule.
-    - f_atoms: A mapping from an atom index to a list atom features.
-    - f_bonds: A mapping from a bond index to a list of bond features.
-    - a2b: A mapping from an atom index to a list of incoming bond indices.
-    - b2a: A mapping from a bond index to the index of the atom the bond originates from.
-    - b2revb: A mapping from a bond index to the index of the reverse bond.
-    """
-
-    def __init__(self, smiles: str, args: Namespace):
+    """A MolGraph represents the graph structure and featurization of a single molecule."""
+    def __init__(self,
+                 n_atoms: int,
+                 n_bonds: int,
+                 f_atoms: List[List[Union[bool, int, float]]],
+                 f_bonds: List[List[Union[bool, int, float]]],
+                 a2b: List[List[int]],
+                 b2a: List[int],
+                 b2revb: List[int]):
         """
-        Computes the graph structure and featurization of a molecule.
+        Creates a MolGraph.
+
+        :param n_atoms: Number of atoms.
+        :param n_bonds: Number of bonds.
+        :param f_atoms: Mapping from atom index to atom features.
+        :param f_bonds: Mapping from bond index to concat(in_atom, bond) features.
+        :param a2b: Mapping from atom index to incoming bond indices.
+        :param b2a: Mapping from bond index to the index of the atom the bond is coming from.
+        :param b2revb: Mapping from bond index to the index of the reverse bond.
+        """
+        self.n_atoms = n_atoms
+        self.n_bonds = n_bonds
+        self.f_atoms = f_atoms
+        self.f_bonds = f_bonds
+        self.a2b = a2b
+        self.b2a = b2a
+        self.b2revb = b2revb
+
+    @classmethod
+    def from_smiles(cls, smiles: str, args: Namespace):
+        """
+        Computes the graph structure and featurization of a molecule and creates a MolGraph.
 
         :param smiles: A smiles string.
         :param args: Arguments.
         """
-        self.smiles = smiles
-        self.n_atoms = 0  # number of atoms
-        self.n_bonds = 0  # number of bonds
-        self.f_atoms = []  # mapping from atom index to atom features
-        self.f_bonds = []  # mapping from bond index to concat(in_atom, bond) features
-        self.a2b = []  # mapping from atom index to incoming bond indices
-        self.b2a = []  # mapping from bond index to the index of the atom the bond is coming from
-        self.b2revb = []  # mapping from bond index to the index of the reverse bond
+        n_atoms = 0  # number of atoms
+        n_bonds = 0  # number of bonds
+        f_atoms = []  # mapping from atom index to atom features
+        f_bonds = []  # mapping from bond index to concat(in_atom, bond) features
+        a2b = []  # mapping from atom index to incoming bond indices
+        b2a = []  # mapping from bond index to the index of the atom the bond is coming from
+        b2revb = []  # mapping from bond index to the index of the reverse bond
 
         # Convert smiles to molecule
         mol = Chem.MolFromSmiles(smiles)
 
         # fake the number of "atoms" if we are collapsing substructures
-        self.n_atoms = mol.GetNumAtoms()
-        
+        n_atoms = mol.GetNumAtoms()
+
         # Get atom features
         for i, atom in enumerate(mol.GetAtoms()):
-            self.f_atoms.append(atom_features(atom))
-        self.f_atoms = [self.f_atoms[i] for i in range(self.n_atoms)]
+            f_atoms.append(atom_features(atom))
+        f_atoms = [f_atoms[i] for i in range(n_atoms)]
 
-        for _ in range(self.n_atoms):
-            self.a2b.append([])
+        for _ in range(n_atoms):
+            a2b.append([])
 
         # Get bond features
-        for a1 in range(self.n_atoms):
-            for a2 in range(a1 + 1, self.n_atoms):
+        for a1 in range(n_atoms):
+            for a2 in range(a1 + 1, n_atoms):
                 bond = mol.GetBondBetweenAtoms(a1, a2)
 
                 if bond is None:
@@ -178,22 +192,32 @@ class MolGraph:
                 f_bond = bond_features(bond)
 
                 if args.atom_messages:
-                    self.f_bonds.append(f_bond)
-                    self.f_bonds.append(f_bond)
+                    f_bonds.append(f_bond)
+                    f_bonds.append(f_bond)
                 else:
-                    self.f_bonds.append(self.f_atoms[a1] + f_bond)
-                    self.f_bonds.append(self.f_atoms[a2] + f_bond)
+                    f_bonds.append(f_atoms[a1] + f_bond)
+                    f_bonds.append(f_atoms[a2] + f_bond)
 
                 # Update index mappings
-                b1 = self.n_bonds
+                b1 = n_bonds
                 b2 = b1 + 1
-                self.a2b[a2].append(b1)  # b1 = a1 --> a2
-                self.b2a.append(a1)
-                self.a2b[a1].append(b2)  # b2 = a2 --> a1
-                self.b2a.append(a2)
-                self.b2revb.append(b2)
-                self.b2revb.append(b1)
-                self.n_bonds += 2
+                a2b[a2].append(b1)  # b1 = a1 --> a2
+                b2a.append(a1)
+                a2b[a1].append(b2)  # b2 = a2 --> a1
+                b2a.append(a2)
+                b2revb.append(b2)
+                b2revb.append(b1)
+                n_bonds += 2
+
+        return MolGraph(
+            n_atoms=n_atoms,
+            n_bonds=n_bonds,
+            f_atoms=f_atoms,
+            f_bonds=f_bonds,
+            a2b=a2b,
+            b2a=b2a,
+            b2revb=b2revb
+        )
 
 
 class BatchMolGraph:
@@ -213,9 +237,6 @@ class BatchMolGraph:
     """
 
     def __init__(self, mol_graphs: List[MolGraph], args: Namespace, mol_scope: List[int] = None):
-        self.smiles_batch = [mol_graph.smiles for mol_graph in mol_graphs]
-        self.n_mols = len(self.smiles_batch)
-
         self.atom_fdim = get_atom_fdim(args)
         self.bond_fdim = get_bond_fdim(args) + (not args.atom_messages) * self.atom_fdim
 
@@ -311,9 +332,6 @@ def extract_subgraph(atoms: Set[int],
     :param mol_graph: A MolGraph for a molecule.
     :return: A subgraph MolGraph containing all the provided atom indices.
     """
-    # Copy MolGraph in order to edit it
-    subgraph = deepcopy(mol_graph)
-
     # Determine bonds in subgraph
     bonds = {b for b, (a1, a2) in enumerate(bond_to_atom_pair) if a1 in atoms and a2 in atoms}
 
@@ -325,13 +343,15 @@ def extract_subgraph(atoms: Set[int],
     b2b = {old_b: new_b for new_b, old_b in enumerate(bond_list)}
 
     # Extract sub-tensors
-    subgraph.n_atoms = len(atoms)
-    subgraph.n_bonds = len(bonds)
-    subgraph.f_atoms = [subgraph.f_atoms[a] for a in atom_list]
-    subgraph.f_bonds = [subgraph.f_bonds[b] for b in bond_list]
-    subgraph.a2b = [[b2b[b] for b in subgraph.a2b[a] if b in bonds] for a in atom_list]
-    subgraph.b2a = [a2a[subgraph.b2a[b]] for b in bond_list]
-    subgraph.b2revb = [b2b[subgraph.b2revb[b]] for b in bond_list]
+    subgraph = MolGraph(
+        n_atoms=len(atoms),
+        n_bonds=len(bonds),
+        f_atoms=[mol_graph.f_atoms[a] for a in atom_list],
+        f_bonds=[mol_graph.f_bonds[b] for b in bond_list],
+        a2b=[[b2b[b] for b in mol_graph.a2b[a] if b in bonds] for a in atom_list],
+        b2a=[a2a[mol_graph.b2a[b]] for b in bond_list],
+        b2revb=[b2b[mol_graph.b2revb[b]] for b in bond_list]
+    )
 
     return subgraph
 
@@ -377,7 +397,7 @@ def extract_substructure_and_context_subgraphs(smiles: str,
 
         # Add subgraphs
         subgraphs.append((substructure_graph, context_graph))
-        
+
     return subgraphs
 
 
@@ -396,7 +416,7 @@ def mol2graph(smiles_batch: List[str],
         if smiles in SMILES_TO_GRAPH:
             mol_graphs = SMILES_TO_GRAPH[smiles]
         else:
-            mol_graph = MolGraph(smiles, args)
+            mol_graph = MolGraph.from_smiles(smiles, args)
 
             # Context prediction subgraph extraction for node-level pretraining
             if args.dataset_type == 'pretraining':

@@ -100,7 +100,6 @@ def train(model: nn.Module,
             # Sample negative substructure/context pairs
             substructure_vecs = substructure_vecs.repeat(1 + args.num_negatives_per_positive, 1)
 
-            # TODO: make this more efficient
             for _ in range(args.num_negatives_per_positive):
                 for mol_index in mol_scope:
                     negative_indices = np.where(mol_scope != mol_index)[0]
