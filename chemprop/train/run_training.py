@@ -228,6 +228,8 @@ def run_training(args: Namespace, logger: Logger = None) -> List[float]:
             scaler=scaler,
             args=args
         )
+        if args.dataset_type == 'pretraining':
+            test_preds, test_targets = test_preds
         test_scores = evaluate_predictions(
             preds=test_preds,
             targets=test_targets,

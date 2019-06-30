@@ -28,6 +28,7 @@ def predict(model: nn.Module,
     model.eval()
 
     preds = []
+    targets = []
 
     num_iters, iter_step = len(data), batch_size
 
@@ -77,5 +78,11 @@ def predict(model: nn.Module,
         # Collect vectors
         batch_preds = batch_preds.tolist()
         preds.extend(batch_preds)
+
+        if args.dataset_type == 'pretraining':
+            targets.extend(mol_batch.targets())
+
+    if args.dataset_type == 'pretraining':
+        preds = (preds, targets)
 
     return preds

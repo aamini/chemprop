@@ -96,7 +96,10 @@ def evaluate(model: nn.Module,
         args=args
     )
 
-    targets = data.targets()
+    if args.dataset_type == 'pretraining':
+        preds, targets = preds
+    else:
+        targets = data.targets()
 
     results = evaluate_predictions(
         preds=preds,
