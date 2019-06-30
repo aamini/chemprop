@@ -80,6 +80,9 @@ class MoleculeDatapoint:
 
         :return: The number of tasks.
         """
+        if self.args is not None and self.args.dataset_type == 'pretraining':
+            return 1
+
         return len(self.targets)
 
     def set_targets(self, targets: List[float]):

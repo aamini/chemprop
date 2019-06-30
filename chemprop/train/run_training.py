@@ -135,9 +135,9 @@ def run_training(args: Namespace, logger: Logger = None) -> List[float]:
     # Set up test set evaluation
     test_smiles, test_targets = test_data.smiles(), test_data.targets()
     if args.dataset_type == 'multiclass':
-        sum_test_preds = np.zeros((len(test_smiles), args.num_tasks, args.multiclass_num_classes))
+        sum_test_preds = np.zeros((len(test_targets), args.num_tasks, args.multiclass_num_classes))
     else:
-        sum_test_preds = np.zeros((len(test_smiles), args.num_tasks))
+        sum_test_preds = np.zeros((len(test_targets), args.num_tasks))
 
     # Train ensemble of models
     for model_idx in range(args.ensemble_size):
