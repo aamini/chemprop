@@ -1,14 +1,14 @@
 #!/bin/bash -x
 
 # TODO do pcba, chembl separately later because they're bigger
-#datasets=('delaney' 'lipo' 'freesolv' 'pdbbind_full' 'pdbbind_core' 'pdbbind_refined' 'qm7' 'qm8' 'bace' 'bbbp' 'sider' 'clintox' 'tox21' 'toxcast' 'hiv' 'muv' 'qm9' 'pcba' 'chembl')
-#dataset_type=('regression' 'regression' 'regression' 'regression' 'regression' 'regression' 'regression' 'regression' 'classification' 'classification' 'classification' 'classification' 'classification' 'classification' 'classification' 'classification' 'regression' 'classification' 'classification')
-#metrics=('rmse' 'rmse' 'rmse' 'rmse' 'rmse' 'rmse' 'mae' 'mae' 'auc' 'auc' 'auc' 'auc' 'auc' 'auc' 'auc' 'prc-auc' 'mae' 'prc-auc' 'auc')
-#sizes=('one' 'one' 'one' 'one' 'one' 'one' 'one' 'one' 'one' 'one' 'one' 'one' 'one' 'one' 'big' 'big' 'big' 'big' 'big')
-datasets=('delaney')
-dataset_type=('regression')
-metrics=('rmse')
-sizes=('one')
+datasets=('delaney' 'lipo' 'freesolv' 'pdbbind_full' 'pdbbind_core' 'pdbbind_refined' 'qm7' 'qm8' 'bace' 'bbbp' 'sider' 'clintox' 'tox21' 'toxcast' 'hiv' 'muv' 'qm9' 'pcba' 'chembl')
+dataset_type=('regression' 'regression' 'regression' 'regression' 'regression' 'regression' 'regression' 'regression' 'classification' 'classification' 'classification' 'classification' 'classification' 'classification' 'classification' 'classification' 'regression' 'classification' 'classification')
+metrics=('rmse' 'rmse' 'rmse' 'rmse' 'rmse' 'rmse' 'mae' 'mae' 'auc' 'auc' 'auc' 'auc' 'auc' 'auc' 'auc' 'prc-auc' 'mae' 'prc-auc' 'auc')
+sizes=('one' 'one' 'one' 'one' 'one' 'one' 'one' 'one' 'one' 'one' 'one' 'one' 'one' 'one' 'big' 'big' 'big' 'big' 'big')
+#datasets=('delaney')
+#dataset_type=('regression')
+#metrics=('rmse')
+#sizes=('one')
 
 split_type="random"
 
