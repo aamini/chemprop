@@ -5,12 +5,12 @@ import numpy as np
 from scipy import stats
 
 
-def welchs(mean1: List[float],
-           std1: List[float],
-           nobs1: List[int],
-           mean2: List[float],
-           std2: List[float],
-           nobs2: List[int]):
+def welchs(mean1: List[float],  # mean performance across folds for each dataset (model 1)
+           std1: List[float],  # standard deviation performance across folds for each dataset (model 1)
+           nobs1: List[int],  # number of CV folds for each dataset (model 1)
+           mean2: List[float],  # mean performance across folds for each dataset (model 2)
+           std2: List[float],  # standard deviation performance across folds for each dataset (model 2)
+           nobs2: List[int]):  # number of CV folds for each dataset (model 2)
     # Expand one number of observations to all
     if len(nobs1) == 1:
         nobs1 = nobs1 * len(mean1)
@@ -19,7 +19,7 @@ def welchs(mean1: List[float],
         nobs2 = nobs2 * len(mean2)
 
     assert len(mean1) == len(std1) == len(nobs1) == len(mean2) == len(std2) == len(nobs2)
-
+    
     # Compute Welch's t-test p-values for each dataset based on mean, standard deviation, and number of observations
     pvalues = [
         stats.ttest_ind_from_stats(mean1=m1, std1=s1, nobs1=n1, mean2=m2, std2=s2, nobs2=n2, equal_var=False).pvalue
