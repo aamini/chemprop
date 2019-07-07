@@ -1,33 +1,37 @@
 from argparse import ArgumentParser
 from collections import OrderedDict
-import csv
 import os
-from typing import Tuple
+from typing import List, Tuple
 
 import numpy as np
 from scipy.stats import wilcoxon
 
-
-def mae(preds: np.ndarray, targets: np.ndarray) -> np.ndarray:
-    return np.mean(np.abs(preds - targets), axis=1)
-
-
-def mse(preds: np.ndarray, targets: np.ndarray) -> np.ndarray:
-    return np.mean((preds - targets) ** 2, axis=1)
+from chemprop.train.evaluate import evaluate_predictions
+from chemprop.utils import mean_absolute_error, rmse, roc_auc_score, prc_auc
 
 
 DATASETS = OrderedDict()
-DATASETS['qm7'] = {'metric': mae}
-DATASETS['qm8'] = {'metric': mae}
-DATASETS['qm9'] = {'metric': mae}
-DATASETS['delaney'] = {'metric': mse}
-DATASETS['freesolv'] = {'metric': mse}
-DATASETS['lipo'] = {'metric': mse}
-DATASETS['pdbbind_full'] = {'metric': mse}
-DATASETS['pdbbind_core'] = {'metric': mse}
-DATASETS['pdbbind_refined'] = {'metric': mse}
+DATASETS['qm7'] = {'metric': mean_absolute_error, 'type': 'regression'}
+DATASETS['qm8'] = {'metric': mean_absolute_error, 'type': 'regression'}
+DATASETS['qm9'] = {'metric': mean_absolute_error, 'type': 'regression'}
+DATASETS['delaney'] = {'metric': rmse, 'type': 'regression'}
+DATASETS['freesolv'] = {'metric': rmse, 'type': 'regression'}
+DATASETS['lipo'] = {'metric': rmse, 'type': 'regression'}
+DATASETS['pdbbind_full'] = {'metric': rmse, 'type': 'regression'}
+DATASETS['pdbbind_core'] = {'metric': rmse, 'type': 'regression'}
+DATASETS['pdbbind_refined'] = {'metric': rmse, 'type': 'regression'}
+DATASETS['pcba'] = {'metric': prc_auc, 'type': 'classification'}
+DATASETS['muv'] = {'metric': prc_auc, 'type': 'classification'}
+DATASETS['hiv'] = {'metric': roc_auc_score, 'type': 'classification'}
+DATASETS['bace'] = {'metric': roc_auc_score, 'type': 'classification'}
+DATASETS['bbbp'] = {'metric': roc_auc_score, 'type': 'classification'}
+DATASETS['tox21'] = {'metric': roc_auc_score, 'type': 'classification'}
+DATASETS['toxcast'] = {'metric': roc_auc_score, 'type': 'classification'}
+DATASETS['sider'] = {'metric': roc_auc_score, 'type': 'classification'}
+DATASETS['clintox'] = {'metric': roc_auc_score, 'type': 'classification'}
+DATASETS['chembl'] = {'metric': roc_auc_score, 'type': 'classification'}
 
-# test if error of 1 is less than error of 2
+# test if 1 is better than 2 (less error, higher auc)
 COMPARISONS = [
     ('default', 'random_forest'),
     ('default', 'ffn_morgan'),
@@ -67,18 +71,49 @@ def load_preds_and_targets(preds_dir: str,
     return preds, targets
 
 
+def compute_values(dataset: str,
+                   preds: List[np.ndarray],
+                   targets: List[np.ndarray]) -> List[float]:
+    num_tasks = len(preds[0][0])
+
+    values = [
+        evaluate_predictions(
+            preds=pred,
+            targets=target,
+            num_tasks=num_tasks,
+            metric_func=DATASETS[dataset]['metric'],
+            dataset_type=DATASETS[dataset]['type']
+        )
+        for pred, target in zip(preds, targets)
+    ]
+
+    values = [np.nanmean(value) for value in values]
+
+    return values
+
+
 def wilcoxon_significance(preds_dir: str, split_type: str):
     print('\t'.join([f'{exp_1} vs {exp_2}' for exp_1, exp_2 in COMPARISONS]))
 
     for dataset in DATASETS:
+        dataset_type = DATASETS[dataset]['type']
+
         for exp_1, exp_2 in COMPARISONS:
             preds_1, targets_1 = load_preds_and_targets(preds_dir, exp_1, dataset, split_type)  # num_molecules x num_targets
             preds_2, targets_2 = load_preds_and_targets(preds_dir, exp_2, dataset, split_type)  # num_molecules x num_targets
 
-            errors_1, errors_2 = DATASETS[dataset]['metric'](preds_1, targets_1), DATASETS[dataset]['metric'](preds_2, targets_2)
+            if dataset_type == 'regression':
+                preds_1, targets_1 = [[pred] for pred in preds_1], [[target] for target in targets_1]
+                preds_2, targets_2 = [[pred] for pred in preds_2], [[target] for target in targets_2]
+            else:
+                # Split into 30 roughly equal pieces
+                preds_1, targets_1 = np.array_split(preds_1, 30), np.array_split(targets_1, 30)
+                preds_2, targets_2 = np.array_split(preds_2, 30), np.array_split(targets_2, 30)
+
+            values_1, values_2 = compute_values(dataset, preds_1, targets_1), compute_values(dataset, preds_2, targets_2)
 
             # test if error of 1 is less than error of 2
-            print(wilcoxon(errors_1, errors_2, alternative='less').pvalue, end='\t')
+            print(wilcoxon(values_1, values_2, alternative='less' if dataset_type == 'regression' else 'greater').pvalue, end='\t')
         print()
 
 
