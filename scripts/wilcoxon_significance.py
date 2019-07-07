@@ -5,6 +5,7 @@ from typing import List, Tuple
 
 import numpy as np
 from scipy.stats import wilcoxon
+from tqdm import tqdm
 
 from chemprop.train.evaluate import evaluate_predictions
 from chemprop.utils import mean_absolute_error, rmse, roc_auc_score, prc_auc
@@ -35,7 +36,7 @@ DATASETS['chembl'] = {'metric': roc_auc_score, 'type': 'classification'}
 COMPARISONS = [
     ('default', 'random_forest'),
     ('default', 'ffn_morgan'),
-    ('default', 'ffn_morgan_counts'),
+    ('default', 'ffn_morgan_count'),
     ('default', 'ffn_rdkit'),
     ('features_no_opt', 'default'),
     ('hyperopt_eval', 'default'),
@@ -93,9 +94,10 @@ def compute_values(dataset: str,
 
 
 def wilcoxon_significance(preds_dir: str, split_type: str):
-    print('\t'.join([f'{exp_1} vs {exp_2}' for exp_1, exp_2 in COMPARISONS]))
+    print('dataset\t' + '\t'.join([f'{exp_1} vs {exp_2}' for exp_1, exp_2 in COMPARISONS]))
 
     for dataset in DATASETS:
+        print(dataset, end='\t')
         dataset_type = DATASETS[dataset]['type']
 
         for exp_1, exp_2 in COMPARISONS:
