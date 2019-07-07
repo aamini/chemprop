@@ -61,7 +61,7 @@ def wilcoxon_significance(preds_dir: str, split_type: str):
             errors_1, errors_2 = DATASETS[dataset]['metric'](preds_1, targets_1), DATASETS[dataset]['metric'](preds_2, targets_2)
 
             # test if error of 1 is less than error of 2
-            print(wilcoxon(errors_1, errors_2, alternative='lesser').pvalue, end='\t')
+            print(wilcoxon(errors_1, errors_2, alternative='less').pvalue, end='\t')
 
 
 if __name__ == '__main__':
