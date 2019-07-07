@@ -254,8 +254,6 @@ def run_training(args: Namespace, logger: Logger = None) -> List[float]:
     # Evaluate ensemble on test set
     avg_test_preds = (sum_test_preds / args.ensemble_size).tolist()
 
-    return avg_test_preds
-
     ensemble_scores = evaluate_predictions(
         preds=avg_test_preds,
         targets=test_targets,
@@ -275,4 +273,4 @@ def run_training(args: Namespace, logger: Logger = None) -> List[float]:
         for task_name, ensemble_score in zip(args.task_names, ensemble_scores):
             info(f'Ensemble test {task_name} {args.metric} = {ensemble_score:.6f}')
 
-    return ensemble_scores
+    return ensemble_score, avg_test_preds
