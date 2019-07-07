@@ -151,8 +151,8 @@ def cross_validate_random_forest(args: Namespace, logger: Logger = None) -> Tupl
         args.seed = init_seed + fold_num
         model_scores, model_preds, model_targets = run_random_forest(args, logger)
         all_scores.append(model_scores)
-        all_preds.append(model_preds)
-        all_targets.append(model_targets)
+        all_preds += model_preds
+        all_targets += model_targets
     all_scores = np.array(all_scores)
     all_preds = np.array(all_preds)
     all_targets = np.array(all_targets)
