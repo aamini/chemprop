@@ -30,6 +30,9 @@ def cross_validate(args: Namespace, logger: Logger = None) -> Tuple[float, float
         all_scores.append(model_scores)
     all_scores = np.array(all_scores)
 
+    np.save(os.path.join(args.checkpoint_dir, 'preds.npy'), all_scores)
+    exit()
+
     # Report results
     info(f'{args.num_folds}-fold cross validation')
 

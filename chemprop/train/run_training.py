@@ -254,6 +254,8 @@ def run_training(args: Namespace, logger: Logger = None) -> List[float]:
     # Evaluate ensemble on test set
     avg_test_preds = (sum_test_preds / args.ensemble_size).tolist()
 
+    return avg_test_preds
+
     ensemble_scores = evaluate_predictions(
         preds=avg_test_preds,
         targets=test_targets,
