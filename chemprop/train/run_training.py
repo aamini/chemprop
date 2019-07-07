@@ -273,4 +273,4 @@ def run_training(args: Namespace, logger: Logger = None) -> List[float]:
         for task_name, ensemble_score in zip(args.task_names, ensemble_scores):
             info(f'Ensemble test {task_name} {args.metric} = {ensemble_score:.6f}')
 
-    return ensemble_scores, avg_test_preds
+    return ensemble_scores, avg_test_preds, test_targets
