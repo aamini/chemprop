@@ -29,7 +29,18 @@ DATASETS['pdbbind_refined'] = {'metric': mse}
 
 # test if error of 1 is less than error of 2
 COMPARISONS = [
-    ('default', 'ffn_morgan')
+    ('default', 'random_forest'),
+    ('default', 'ffn_morgan'),
+    ('default', 'ffn_morgan_counts'),
+    ('default', 'ffn_rdkit'),
+    ('features_no_opt', 'default'),
+    ('hyperopt_eval', 'default'),
+    ('hyperopt_eval', 'features_no_opt'),
+    ('hyperopt_ensemble', 'default'),
+    ('hyperopt_ensemble', 'hyperopt_eval'),
+    ('default', 'undirected'),
+    ('default', 'atom_messages'),
+    # ('hyperopt_eval', 'mayr_et_al')
 ]
 
 
@@ -57,6 +68,8 @@ def load_preds_and_targets(preds_dir: str,
 
 
 def wilcoxon_significance(preds_dir: str, split_type: str):
+    print('\t'.join([f'{exp_1} vs {exp_2}' for exp_1, exp_2 in COMPARISONS]))
+
     for dataset in DATASETS:
         for exp_1, exp_2 in COMPARISONS:
             preds_1, targets_1 = load_preds_and_targets(preds_dir, exp_1, dataset, split_type)  # num_molecules x num_targets
@@ -66,13 +79,14 @@ def wilcoxon_significance(preds_dir: str, split_type: str):
 
             # test if error of 1 is less than error of 2
             print(wilcoxon(errors_1, errors_2, alternative='less').pvalue, end='\t')
+        print()
 
 
 if __name__ == '__main__':
     parser = ArgumentParser()
     parser.add_argument('--preds_dir', type=str, required=True,
                         help='Path to a directory containing predictions')
-    parser.add_argument('--split_type', type=str, required=True,
+    parser.add_argument('--split_type', type=str, required=True, choices=['random', 'scaffold'],
                         help='Split type')
     args = parser.parse_args()
 
