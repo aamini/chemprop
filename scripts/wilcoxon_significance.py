@@ -1,60 +1,78 @@
 from argparse import ArgumentParser
+from collections import OrderedDict
 import csv
+import os
+from typing import Tuple
 
+import numpy as np
 from scipy.stats import wilcoxon
 
 
-def wilcoxon_significance(results_path: str, split_type: str, print_header: bool):
-    split_type = split_type.lower()
+def mae(preds: np.ndarray, targets: np.ndarray) -> np.ndarray:
+    return np.mean(np.abs(preds - targets), axis=1)
 
-    # Load results data
-    with open(results_path) as f:
-        data = list(csv.DictReader(f))
 
-    experiments = [experiment for experiment in data[0].keys() if experiment != 'Fold']
-    results = {experiment: [] for experiment in experiments}
+def mse(preds: np.ndarray, targets: np.ndarray) -> np.ndarray:
+    return np.mean((preds - targets) ** 2, axis=1)
 
-    for row in data:
-        # Skip incorrect split type
-        if split_type not in row['Fold'].lower():
-            continue
 
-        for experiment, value in row.items():
-            if experiment != 'Fold':
-                try:
-                    results[experiment].append(float(value))
-                except ValueError:
-                    pass
+DATASETS = OrderedDict()
+DATASETS['qm7'] = {'metric': mae, 'folds': list(range(10))}
+DATASETS['qm8'] = {'metric': mae, 'folds': list(range(10))}
+DATASETS['qm9'] = {'metric': mae, 'folds': list(range(3))}
+DATASETS['delaney'] = {'metric': mse, 'folds': list(range(10))}
+DATASETS['freesolv'] = {'metric': mse, 'folds': list(range(10))}
+DATASETS['lipo'] = {'metric': mse, 'folds': list(range(10))}
+DATASETS['pdbbind_full'] = {'metric': mse, 'folds': list(range(10))}
+DATASETS['pdbbind_core'] = {'metric': mse, 'folds': list(range(10))}
+DATASETS['pdbbind_refined'] = {'metric': mse, 'folds': list(range(10))}
 
-    if print_header:
-        for i in range(len(experiments)):
-            for j in range(i + 1, len(experiments)):
-                print(f'{experiments[i]} vs {experiments[j]}', end='\t')
-        print()
+# test if error of 1 is less than error of 2
+COMPARISONS = [
+    ('default', 'ffn_morgan')
+]
 
-    for i in range(len(experiments)):
-        for j in range(i + 1, len(experiments)):
-            exp_1, exp_2 = results[experiments[i]], results[experiments[j]]
 
-            if len(exp_1) == 0 or len(exp_2) == 0:
-                print('', end='\t')
-                continue
+def load_preds_and_targets(preds_dir: str,
+                           experiment: str,
+                           dataset: str,
+                           split_type: str) -> Tuple[np.ndarray, np.ndarray]:
+    all_preds, all_targets = [], []
+    for fold in DATASETS[dataset]['folds']:
+        preds_path = os.path.join(preds_dir, experiment, dataset, split_type, str(fold), 'preds.npy')
+        preds = np.load(preds_path)
+        all_preds.append(preds)
 
-            print(wilcoxon(exp_1, exp_2).pvalue, end='\t')
+        targets_path = os.path.join(preds_dir, experiment, dataset, split_type, str(fold), 'targets.npy')
+        targets = np.load(targets_path)
+        all_targets.append(targets)
+
+    all_preds, all_targets = np.concatenate(all_preds, axis=0), np.concatenate(all_targets, axis=0)
+
+    return all_preds, all_targets
+
+
+def wilcoxon_significance(preds_dir: str, split_type: str):
+    for dataset in DATASETS:
+        for exp_1, exp_2 in COMPARISONS:
+            preds_1, targets_1 = load_preds_and_targets(preds_dir, exp_1, dataset, split_type)  # num_molecules x num_targets
+            preds_2, targets_2 = load_preds_and_targets(preds_dir, exp_2, dataset, split_type)  # num_molecules x num_targets
+
+            errors_1, errors_2 = DATASETS[dataset]['metric'](preds_1, targets_1), DATASETS[dataset]['metric'](preds_2, targets_2)
+
+            # test if error of 1 is less than error of 2
+            print(wilcoxon(errors_1, errors_2, alternative='lesser').pvalue, end='\t')
 
 
 if __name__ == '__main__':
     parser = ArgumentParser()
-    parser.add_argument('--results_path', type=str, required=True,
-                        help='Path to results .csv file in the structure of aggregate_results_by_dataset.py')
+    parser.add_argument('--preds_dir', type=str, required=True,
+                        help='Path to a directory containing predictions')
     parser.add_argument('--split_type', type=str, required=True,
                         help='Split type')
-    parser.add_argument('--print_header', action='store_true', default=False,
-                        help='Whether to print the header row of which experiments are being compared')
     args = parser.parse_args()
 
     wilcoxon_significance(
-        results_path=args.results_path,
+        preds_dir=args.preds_dir,
         split_type=args.split_type,
-        print_header=args.print_header
     )
