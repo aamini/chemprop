@@ -33,7 +33,7 @@ for i in ${!datasets[@]}; do
         if [[ ! -e "$file" ]]; then
             echo "Fold indices do not exist" # you should expect this to happen when not testing on all 10 folds
         else
-            python random_forest.py ${single_task} --data_path data/${datasets[$i]}.csv --dataset_type ${dataset_type[$i]} TODO FIGURE THIS OUT ${split_info} --quiet --metric ${metrics[$i]}
+            python random_forest.py ${single_task} --data_path data/${datasets[$i]}.csv --dataset_type ${dataset_type[$i]} --checkpoint_dir ../ckpt/417_random_forest/${datasets[$i]}/${split_type}/${folds[$fold]} ${split_info} --quiet --metric ${metrics[$i]}
         fi
     done
 done

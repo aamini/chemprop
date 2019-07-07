@@ -1,5 +1,6 @@
 from argparse import Namespace
 from logging import Logger
+import os
 from pprint import pformat
 from typing import Callable, List, Tuple
 
@@ -21,6 +22,7 @@ def single_task_random_forest(train_data: MoleculeDataset,
                               args: Namespace,
                               logger: Logger = None) -> List[float]:
     scores = []
+    preds = [[] for _ in range(len(test_data))]
     num_tasks = train_data.num_tasks()
     for task_num in trange(num_tasks):
         # Only get features and targets for molecules where target is not None
@@ -42,6 +44,9 @@ def single_task_random_forest(train_data: MoleculeDataset,
 
         test_preds = model.predict(test_features)
 
+        for i in range(len(test_preds)):
+            preds[i].append(test_preds[i])
+
         test_preds = [[pred] for pred in test_preds]
         test_targets = [[target] for target in test_targets]
 
@@ -55,7 +60,7 @@ def single_task_random_forest(train_data: MoleculeDataset,
         )
         scores.append(score[0])
 
-    return scores
+    return scores, preds
 
 
 def multi_task_random_forest(train_data: MoleculeDataset,
@@ -91,7 +96,7 @@ def multi_task_random_forest(train_data: MoleculeDataset,
         logger=logger
     )
 
-    return scores
+    return scores, test_preds
 
 
 def run_random_forest(args: Namespace, logger: Logger = None) -> List[float]:
@@ -121,13 +126,13 @@ def run_random_forest(args: Namespace, logger: Logger = None) -> List[float]:
 
     debug('Training')
     if args.single_task:
-        scores = single_task_random_forest(train_data, test_data, metric_func, args, logger)
+        scores, preds = single_task_random_forest(train_data, test_data, metric_func, args, logger)
     else:
-        scores = multi_task_random_forest(train_data, test_data, metric_func, args, logger)
+        scores, preds = multi_task_random_forest(train_data, test_data, metric_func, args, logger)
 
     info(f'Test {args.metric} = {np.nanmean(scores)}')
 
-    return scores
+    return scores, preds
 
 
 def cross_validate_random_forest(args: Namespace, logger: Logger = None) -> Tuple[float, float]:
@@ -136,12 +141,17 @@ def cross_validate_random_forest(args: Namespace, logger: Logger = None) -> Tupl
 
     # Run training on different random seeds for each fold
     all_scores = []
+    all_preds = []
     for fold_num in range(args.num_folds):
         info(f'Fold {fold_num}')
         args.seed = init_seed + fold_num
-        model_scores = run_random_forest(args, logger)
+        model_scores, model_preds = run_random_forest(args, logger)
         all_scores.append(model_scores)
+        all_preds.append(model_preds)
     all_scores = np.array(all_scores)
+    all_preds = np.array(all_preds)
+
+    np.save(os.path.join(args.checkpoint_dir, 'preds.npy'), all_preds)
 
     # Report scores for each fold
     for fold_num, scores in enumerate(all_scores):
