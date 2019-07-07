@@ -39,11 +39,11 @@ def load_preds_and_targets(preds_dir: str,
                            split_type: str) -> Tuple[np.ndarray, np.ndarray]:
     all_preds, all_targets = [], []
     for fold in DATASETS[dataset]['folds']:
-        preds_path = os.path.join(preds_dir, experiment, dataset, split_type, str(fold), 'preds.npy')
+        preds_path = os.path.join(preds_dir, f'417_{experiment}', dataset, split_type, str(fold), 'preds.npy')
         preds = np.load(preds_path)
         all_preds.append(preds)
 
-        targets_path = os.path.join(preds_dir, experiment, dataset, split_type, str(fold), 'targets.npy')
+        targets_path = os.path.join(preds_dir, f'417_{experiment}', dataset, split_type, str(fold), 'targets.npy')
         targets = np.load(targets_path)
         all_targets.append(targets)
 
