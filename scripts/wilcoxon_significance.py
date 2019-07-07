@@ -17,15 +17,15 @@ def mse(preds: np.ndarray, targets: np.ndarray) -> np.ndarray:
 
 
 DATASETS = OrderedDict()
-DATASETS['qm7'] = {'metric': mae, 'folds': list(range(10))}
-DATASETS['qm8'] = {'metric': mae, 'folds': list(range(10))}
-DATASETS['qm9'] = {'metric': mae, 'folds': list(range(3))}
-DATASETS['delaney'] = {'metric': mse, 'folds': list(range(10))}
-DATASETS['freesolv'] = {'metric': mse, 'folds': list(range(10))}
-DATASETS['lipo'] = {'metric': mse, 'folds': list(range(10))}
-DATASETS['pdbbind_full'] = {'metric': mse, 'folds': list(range(10))}
-DATASETS['pdbbind_core'] = {'metric': mse, 'folds': list(range(10))}
-DATASETS['pdbbind_refined'] = {'metric': mse, 'folds': list(range(10))}
+DATASETS['qm7'] = {'metric': mae}
+DATASETS['qm8'] = {'metric': mae}
+DATASETS['qm9'] = {'metric': mae}
+DATASETS['delaney'] = {'metric': mse}
+DATASETS['freesolv'] = {'metric': mse}
+DATASETS['lipo'] = {'metric': mse}
+DATASETS['pdbbind_full'] = {'metric': mse}
+DATASETS['pdbbind_core'] = {'metric': mse}
+DATASETS['pdbbind_refined'] = {'metric': mse}
 
 # test if error of 1 is less than error of 2
 COMPARISONS = [
@@ -37,19 +37,23 @@ def load_preds_and_targets(preds_dir: str,
                            experiment: str,
                            dataset: str,
                            split_type: str) -> Tuple[np.ndarray, np.ndarray]:
-    all_preds, all_targets = [], []
-    for fold in DATASETS[dataset]['folds']:
+    preds, targets = [], []
+    for fold in range(10):
         preds_path = os.path.join(preds_dir, f'417_{experiment}', dataset, split_type, str(fold), 'preds.npy')
-        preds = np.load(preds_path)
-        all_preds.append(preds)
-
         targets_path = os.path.join(preds_dir, f'417_{experiment}', dataset, split_type, str(fold), 'targets.npy')
-        targets = np.load(targets_path)
-        all_targets.append(targets)
 
-    all_preds, all_targets = np.concatenate(all_preds, axis=0), np.concatenate(all_targets, axis=0)
+        if not (os.path.exists(preds_path) and os.path.exists(targets_path)):
+            continue
 
-    return all_preds, all_targets
+        preds.append(np.load(preds_path))
+        targets.append(np.load(targets_path))
+
+    if len(preds) not in [3, 10]:
+        raise ValueError('Did not find 3 or 10 preds/targets files')
+
+    preds, targets = np.concatenate(preds, axis=0), np.concatenate(targets, axis=0)
+
+    return preds, targets
 
 
 def wilcoxon_significance(preds_dir: str, split_type: str):
