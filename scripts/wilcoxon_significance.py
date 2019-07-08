@@ -68,6 +68,8 @@ def load_preds_and_targets(preds_dir: str,
         preds = np.load(preds_path)
         targets = np.load(targets_path)
 
+        assert preds.shape == targets.shape
+
         all_preds += preds.tolist()
         all_targets += targets.tolist()
 
