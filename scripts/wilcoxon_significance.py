@@ -40,12 +40,12 @@ COMPARISONS = [
     ('default', 'ffn_rdkit'),
     ('features_no_opt', 'default'),
     ('hyperopt_eval', 'default'),
-    ('hyperopt_eval', 'features_no_opt'),
     ('hyperopt_ensemble', 'default'),
+    ('hyperopt_eval', 'features_no_opt'),
     ('hyperopt_ensemble', 'hyperopt_eval'),
     ('default', 'undirected'),
     ('default', 'atom_messages'),
-    # ('hyperopt_eval', 'mayr_et_al')
+    ('hyperopt_eval', 'compare_lsc_scaffold')
 ]
 
 
@@ -85,7 +85,7 @@ def compute_values(dataset: str,
             metric_func=DATASETS[dataset]['metric'],
             dataset_type=DATASETS[dataset]['type']
         )
-        for pred, target in zip(preds, targets)
+        for pred, target in tqdm(zip(preds, targets), total=len(preds))
     ]
 
     values = [np.nanmean(value) for value in values]
@@ -101,6 +101,9 @@ def wilcoxon_significance(preds_dir: str, split_type: str):
         dataset_type = DATASETS[dataset]['type']
 
         for exp_1, exp_2 in COMPARISONS:
+            if exp_2 == 'compare_lsc_scaffold' and split_type != 'scaffold':
+                continue
+
             preds_1, targets_1 = load_preds_and_targets(preds_dir, exp_1, dataset, split_type)  # num_molecules x num_targets
             preds_2, targets_2 = load_preds_and_targets(preds_dir, exp_2, dataset, split_type)  # num_molecules x num_targets
 
