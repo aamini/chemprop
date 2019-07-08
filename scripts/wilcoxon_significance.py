@@ -143,6 +143,8 @@ def wilcoxon_significance(preds_dir: str, split_type: str):
 
             values_1, values_2 = experiment_to_values[experiment_1], experiment_to_values[experiment_2]
 
+            assert len(values_1) == len(values_2)
+
             if values_1 is None or values_2 is None:
                 print('Error', end='\t')
                 continue
