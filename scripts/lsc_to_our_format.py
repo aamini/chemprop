@@ -8,24 +8,24 @@ import numpy as np
 
 DATASETS = [
     'qm7',
-    # 'qm8',
-    # 'qm9',
-    # 'delaney',
-    # 'freesolv',
-    # 'lipo',
-    # 'pdbbind_full',
-    # 'pdbbind_core',
-    # 'pdbbind_refined',
-    # 'pcba',
-    # 'muv',
-    # 'hiv',
-    # 'bace',
-    # 'bbbp',
-    # 'tox21',
-    # 'toxcast',
-    # 'sider',
-    # 'clintox',
-    # 'chembl'
+    'qm8',
+    'qm9',
+    'delaney',
+    'freesolv',
+    'lipo',
+    'pdbbind_full',
+    'pdbbind_core',
+    'pdbbind_refined',
+    'pcba',
+    'muv',
+    'hiv',
+    'bace',
+    'bbbp',
+    'tox21',
+    'toxcast',
+    'sider',
+    'clintox',
+    'chembl'
 ]
 
 
@@ -40,7 +40,7 @@ def lsc_to_our_format(lsc_dir: str, ckpt_dir: str, save_dir: str):
         # Convert preds and copy over preds and targets
         for fold in range(10):
             lsc_preds_path = os.path.join(lsc_dir, dataset, 'test', f'fold_{fold}', 'semi', 'o0003.evalPredict.hdf5')
-            ckpt_targets_path = os.path.join(ckpt_dir, '417_default', dataset, 'scaffold', str(fold), 'targets.npy')
+            ckpt_targets_path = os.path.join(ckpt_dir, dataset, 'scaffold', str(fold), 'targets.npy')
 
             if not (os.path.exists(lsc_preds_path) and os.path.exists(ckpt_targets_path)):
                 continue
