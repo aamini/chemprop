@@ -19,7 +19,7 @@ def welchs(mean1: List[float],  # mean performance across folds for each dataset
         nobs2 = nobs2 * len(mean2)
 
     assert len(mean1) == len(std1) == len(nobs1) == len(mean2) == len(std2) == len(nobs2)
-    
+
     # Compute Welch's t-test p-values for each dataset based on mean, standard deviation, and number of observations
     pvalues = [
         stats.ttest_ind_from_stats(mean1=m1, std1=s1, nobs1=n1, mean2=m2, std2=s2, nobs2=n2, equal_var=False).pvalue

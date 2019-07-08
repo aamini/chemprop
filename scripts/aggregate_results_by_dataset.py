@@ -1,8 +1,6 @@
 from argparse import ArgumentParser
 import os
 
-import numpy as np
-
 EXPERIMENTS = [
     'random_forest',
     'ffn_morgan',
