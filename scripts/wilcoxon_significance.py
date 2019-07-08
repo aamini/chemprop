@@ -48,6 +48,8 @@ COMPARISONS = [
     ('hyperopt_eval', 'compare_lsc_scaffold')
 ]
 
+EXPERIMENTS = {exp for comp in COMPARISONS for exp in comp}
+
 
 def load_preds_and_targets(preds_dir: str,
                            experiment: str,
@@ -109,26 +111,35 @@ def wilcoxon_significance(preds_dir: str, split_type: str):
         print(dataset, end='\t')
         dataset_type = DATASETS[dataset]['type']
 
-        for exp_1, exp_2 in COMPARISONS:
-            if exp_2 == 'compare_lsc_scaffold' and split_type != 'scaffold':
+        # Compute values
+        experiment_to_values = {}
+        for experiment in EXPERIMENTS:
+            if experiment == 'compare_lsc_scaffold' and split_type != 'scaffold':
                 continue
 
-            preds_1, targets_1 = load_preds_and_targets(preds_dir, exp_1, dataset, split_type)  # num_molecules x num_targets
-            preds_2, targets_2 = load_preds_and_targets(preds_dir, exp_2, dataset, split_type)  # num_molecules x num_targets
+            preds, targets = load_preds_and_targets(preds_dir, experiment, dataset, split_type)  # num_molecules x num_targets
 
-            if any(x is None for x in [preds_1, targets_1, preds_2, targets_2]):
-                print('Error', end='\t')
-                continue
+            if preds is None or targets is None:
+                experiment_to_values[experiment] = None
 
             if dataset_type == 'regression':
-                preds_1, targets_1 = [[pred] for pred in preds_1], [[target] for target in targets_1]
-                preds_2, targets_2 = [[pred] for pred in preds_2], [[target] for target in targets_2]
+                preds, targets = [[pred] for pred in preds], [[target] for target in targets]
             else:
-                # Split into 30 roughly equal pieces
-                preds_1, targets_1 = np.array_split(preds_1, 30), np.array_split(targets_1, 30)
-                preds_2, targets_2 = np.array_split(preds_2, 30), np.array_split(targets_2, 30)
+                preds, targets = np.array_split(preds, 30), np.array_split(targets, 30)
 
-            values_1, values_2 = compute_values(dataset, preds_1, targets_1), compute_values(dataset, preds_2, targets_2)
+            values = compute_values(dataset, preds, targets)
+            experiment_to_values[experiment] = values
+
+        # Compute p-values
+        for experiment_1, experiment_2 in COMPARISONS:
+            if 'compare_lsc_scaffold' in [experiment_1, experiment_2] and split_type != 'scaffold':
+                continue
+
+            values_1, values_2 = experiment_to_values[experiment_1], experiment_to_values[experiment_2]
+
+            if values_1 is None or values_2 is None:
+                print('Error', end='\t')
+                continue
 
             # test if error of 1 is less than error of 2
             print(wilcoxon(values_1, values_2, alternative='less' if dataset_type == 'regression' else 'greater').pvalue, end='\t')
