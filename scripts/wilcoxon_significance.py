@@ -65,7 +65,9 @@ def load_preds_and_targets(preds_dir: str,
         targets.append(np.load(targets_path))
 
     if len(preds) not in [3, 10]:
-        raise ValueError('Did not find 3 or 10 preds/targets files')
+        print(f'Did not find 3 or 10 preds/targets files for experiment "{experiment}" and dataset "{dataset}" and split type "{split_type}"')
+        import pdb; pdb.set_trace()
+        raise ValueError(f'Did not find 3 or 10 preds/targets files for experiment "{experiment}" and dataset "{dataset}" and split type "{split_type}"')
 
     preds, targets = np.concatenate(preds, axis=0), np.concatenate(targets, axis=0)
 
