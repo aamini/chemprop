@@ -33,10 +33,6 @@ def lsc_to_our_format(lsc_dir: str, ckpt_dir: str, save_dir: str):
     os.makedirs(save_dir, exist_ok=True)
 
     for dataset in DATASETS:
-        # Create directory where things will be copied
-        dataset_save_dir = os.path.join(save_dir, dataset, 'scaffold')
-        os.makedirs(dataset_save_dir, exist_ok=True)
-
         # Convert preds and copy over preds and targets
         for fold in range(10):
             lsc_preds_path = os.path.join(lsc_dir, dataset, 'test', f'fold_{fold}', 'semi', 'o0003.evalPredict.hdf5')
@@ -45,8 +41,11 @@ def lsc_to_our_format(lsc_dir: str, ckpt_dir: str, save_dir: str):
             if not (os.path.exists(lsc_preds_path) and os.path.exists(ckpt_targets_path)):
                 continue
 
-            save_preds_path = os.path.join(dataset_save_dir, str(fold), 'preds.npy')
-            save_targets_path = os.path.join(dataset_save_dir, str(fold), 'targets.npy')
+            save_fold_dir = os.path.join(save_dir, dataset, 'scaffold', str(fold))
+            os.makedirs(save_fold_dir, exist_ok=True)
+
+            save_preds_path = os.path.join(save_fold_dir, 'preds.npy')
+            save_targets_path = os.path.join(save_fold_dir, 'targets.npy')
 
             # Copy targets
             shutil.copy(ckpt_targets_path, save_targets_path)
