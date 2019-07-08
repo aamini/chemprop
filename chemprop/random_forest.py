@@ -45,10 +45,17 @@ def single_task_random_forest(train_data: MoleculeDataset,
 
         test_preds = model.predict(test_features)
 
-        for i in range(len(test_preds)):
-            preds[i].append(test_preds[i])
-            targets[i].append(test_targets[i])
-
+        index = 0
+        for i, tgt in enumerate(test_data.targets()):
+            if tgt[task_num] is None:
+                preds[i].append(None)
+                targets[i].append(None)
+            else:
+                preds[i].append(test_preds[index])
+                targets[i].append(test_targets[index])
+                index += 1
+        assert index == len(test_preds) == len(test_targets)
+        
         test_preds = [[pred] for pred in test_preds]
         test_targets = [[target] for target in test_targets]
 
