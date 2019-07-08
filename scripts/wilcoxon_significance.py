@@ -1,7 +1,7 @@
 from argparse import ArgumentParser
 from collections import OrderedDict
 import os
-from typing import List, Tuple
+from typing import List, Optional, Tuple
 
 import numpy as np
 from scipy.stats import wilcoxon
@@ -52,8 +52,9 @@ COMPARISONS = [
 def load_preds_and_targets(preds_dir: str,
                            experiment: str,
                            dataset: str,
-                           split_type: str) -> Tuple[np.ndarray, np.ndarray]:
-    preds, targets = [], []
+                           split_type: str) -> Tuple[Optional[List[List[float]]],
+                                                     Optional[List[List[float]]]]:
+    all_preds, all_targets = [], []
     for fold in range(10):
         preds_path = os.path.join(preds_dir, f'417_{experiment}', dataset, split_type, str(fold), 'preds.npy')
         targets_path = os.path.join(preds_dir, f'417_{experiment}', dataset, split_type, str(fold), 'targets.npy')
@@ -61,22 +62,25 @@ def load_preds_and_targets(preds_dir: str,
         if not (os.path.exists(preds_path) and os.path.exists(targets_path)):
             continue
 
-        preds.append(np.load(preds_path))
-        targets.append(np.load(targets_path))
+        preds = np.load(preds_path)
+        targets = np.load(targets_path)
 
-    if len(preds) not in [3, 10]:
+        preds = [[p if not np.isnan(p) else None for p in pred] for pred in preds]
+        targets = [[t if not np.isnan(t) else None for t in target] for target in targets]
+
+        all_preds += preds
+        all_targets += targets
+
+    if len(all_preds) not in [3, 10]:
         print(f'Did not find 3 or 10 preds/targets files for experiment "{experiment}" and dataset "{dataset}" and split type "{split_type}"')
-        import pdb; pdb.set_trace()
-        raise ValueError(f'Did not find 3 or 10 preds/targets files for experiment "{experiment}" and dataset "{dataset}" and split type "{split_type}"')
+        return None, None
 
-    preds, targets = np.concatenate(preds, axis=0), np.concatenate(targets, axis=0)
-
-    return preds, targets
+    return all_preds, all_targets
 
 
 def compute_values(dataset: str,
-                   preds: List[np.ndarray],
-                   targets: List[np.ndarray]) -> List[float]:
+                   preds: List[List[List[float]]],
+                   targets: List[List[List[float]]]) -> List[float]:
     num_tasks = len(preds[0][0])
 
     values = [
@@ -108,6 +112,9 @@ def wilcoxon_significance(preds_dir: str, split_type: str):
 
             preds_1, targets_1 = load_preds_and_targets(preds_dir, exp_1, dataset, split_type)  # num_molecules x num_targets
             preds_2, targets_2 = load_preds_and_targets(preds_dir, exp_2, dataset, split_type)  # num_molecules x num_targets
+
+            if any(x is None for x in [preds_1, targets_1, preds_2, targets_2]):
+                print('Error', end='\t')
 
             if dataset_type == 'regression':
                 preds_1, targets_1 = [[pred] for pred in preds_1], [[target] for target in targets_1]
