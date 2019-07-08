@@ -55,6 +55,7 @@ def load_preds_and_targets(preds_dir: str,
                            split_type: str) -> Tuple[Optional[List[List[float]]],
                                                      Optional[List[List[float]]]]:
     all_preds, all_targets = [], []
+    num_folds = 0
     for fold in range(10):
         preds_path = os.path.join(preds_dir, f'417_{experiment}', dataset, split_type, str(fold), 'preds.npy')
         targets_path = os.path.join(preds_dir, f'417_{experiment}', dataset, split_type, str(fold), 'targets.npy')
@@ -71,7 +72,9 @@ def load_preds_and_targets(preds_dir: str,
         all_preds += preds
         all_targets += targets
 
-    if len(all_preds) not in [3, 10]:
+        num_folds += 1
+
+    if num_folds not in [3, 10]:
         print(f'Did not find 3 or 10 preds/targets files for experiment "{experiment}" and dataset "{dataset}" and split type "{split_type}"')
         return None, None
 
@@ -115,6 +118,7 @@ def wilcoxon_significance(preds_dir: str, split_type: str):
 
             if any(x is None for x in [preds_1, targets_1, preds_2, targets_2]):
                 print('Error', end='\t')
+                continue
 
             if dataset_type == 'regression':
                 preds_1, targets_1 = [[pred] for pred in preds_1], [[target] for target in targets_1]
