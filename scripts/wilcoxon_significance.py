@@ -1,5 +1,5 @@
 from argparse import ArgumentParser
-from collections import OrderedDict
+from collections import OrderedDict, namedtuple
 import os
 from typing import List, Optional, Tuple
 
@@ -10,6 +10,8 @@ from tqdm import tqdm
 from chemprop.train.evaluate import evaluate_predictions
 from chemprop.utils import mean_absolute_error, rmse, roc_auc_score, prc_auc
 
+
+FAKE_LOGGER = namedtuple('FakeLogger', ['info'])(info=lambda x: None)
 
 DATASETS = OrderedDict()
 DATASETS['qm7'] = {'metric': mean_absolute_error, 'type': 'regression'}
@@ -95,7 +97,8 @@ def compute_values(dataset: str,
             targets=target,
             num_tasks=num_tasks,
             metric_func=DATASETS[dataset]['metric'],
-            dataset_type=DATASETS[dataset]['type']
+            dataset_type=DATASETS[dataset]['type'],
+            logger=FAKE_LOGGER
         )
         for pred, target in tqdm(zip(preds, targets), total=len(preds))
     ]
