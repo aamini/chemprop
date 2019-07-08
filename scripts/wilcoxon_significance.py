@@ -121,6 +121,7 @@ def wilcoxon_significance(preds_dir: str, split_type: str):
 
             if preds is None or targets is None:
                 experiment_to_values[experiment] = None
+                continue
 
             if dataset_type == 'regression':
                 preds, targets = [[pred] for pred in preds], [[target] for target in targets]
