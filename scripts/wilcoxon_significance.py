@@ -54,8 +54,8 @@ EXPERIMENTS = {exp for comp in COMPARISONS for exp in comp}
 def load_preds_and_targets(preds_dir: str,
                            experiment: str,
                            dataset: str,
-                           split_type: str) -> Tuple[Optional[List[List[float]]],
-                                                     Optional[List[List[float]]]]:
+                           split_type: str) -> Tuple[Optional[np.ndarray],
+                                                     Optional[np.ndarray]]:
     all_preds, all_targets = [], []
     num_folds = 0
     for fold in range(10):
@@ -68,16 +68,18 @@ def load_preds_and_targets(preds_dir: str,
         preds = np.load(preds_path)
         targets = np.load(targets_path)
 
-        assert preds.shape == targets.shape
-
-        all_preds += preds.tolist()
-        all_targets += targets.tolist()
+        all_preds.append(preds)
+        all_targets.append(targets)
 
         num_folds += 1
 
     if num_folds not in [3, 10]:
         print(f'Did not find 3 or 10 preds/targets files for experiment "{experiment}" and dataset "{dataset}" and split type "{split_type}"')
         return None, None
+
+    all_preds, all_targets = np.concatenate(all_preds, axis=0), np.concatenate(all_targets, axis=0)
+
+    assert all_preds.shape == all_targets.shape
 
     return all_preds, all_targets
 
