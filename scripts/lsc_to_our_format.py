@@ -33,6 +33,8 @@ def lsc_to_our_format(lsc_dir: str, ckpt_dir: str, save_dir: str):
     os.makedirs(save_dir, exist_ok=True)
 
     for dataset in DATASETS:
+        print(dataset)
+        
         # Convert preds and copy over preds and targets
         for fold in range(10):
             lsc_preds_path = os.path.join(lsc_dir, dataset, 'test', f'fold_{fold}', 'semi', 'o0003.evalPredict.hdf5')
