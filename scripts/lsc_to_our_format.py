@@ -33,8 +33,10 @@ def lsc_to_our_format(lsc_dir: str, ckpt_dir: str, save_dir: str):
     os.makedirs(save_dir, exist_ok=True)
 
     for dataset in DATASETS:
-        print(dataset)
-        
+        print(dataset, end='\t')
+
+        success = 0
+
         # Convert preds and copy over preds and targets
         for fold in range(10):
             lsc_preds_path = os.path.join(lsc_dir, dataset, 'test', f'fold_{fold}', 'semi', 'o0003.evalPredict.hdf5')
@@ -56,6 +58,10 @@ def lsc_to_our_format(lsc_dir: str, ckpt_dir: str, save_dir: str):
             preds_file = h5py.File(lsc_preds_path)
             preds = np.array(preds_file['predictions'])
             np.save(save_preds_path, preds)
+
+            success += 1
+
+        print(success)
 
 
 if __name__ == '__main__':
