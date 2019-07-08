@@ -75,7 +75,7 @@ def load_preds_and_targets(preds_dir: str,
         num_folds += 1
 
     if num_folds not in [3, 10]:
-        print(f'Did not find 3 or 10 preds/targets files for experiment "{experiment}" and dataset "{dataset}" and split type "{split_type}"')
+        # print(f'Did not find 3 or 10 preds/targets files for experiment "{experiment}" and dataset "{dataset}" and split type "{split_type}"')
         return None, None
 
     return all_preds, all_targets
