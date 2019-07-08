@@ -55,7 +55,7 @@ def single_task_random_forest(train_data: MoleculeDataset,
                 targets[i].append(test_targets[index])
                 index += 1
         assert index == len(test_preds) == len(test_targets)
-        
+
         test_preds = [[pred] for pred in test_preds]
         test_targets = [[target] for target in test_targets]
 
@@ -106,7 +106,7 @@ def multi_task_random_forest(train_data: MoleculeDataset,
         logger=logger
     )
 
-    return scores, test_preds, test_targets
+    return scores, test_preds.tolist(), test_targets
 
 
 def run_random_forest(args: Namespace, logger: Logger = None) -> List[float]:
