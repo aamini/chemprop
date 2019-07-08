@@ -30,12 +30,12 @@ DATASETS = [
 
 
 def lsc_to_our_format(lsc_dir: str, ckpt_dir: str, save_dir: str):
-    os.makedirs(save_dir)
+    os.makedirs(save_dir, exist_ok=True)
 
     for dataset in DATASETS:
         # Create directory where things will be copied
         dataset_save_dir = os.path.join(save_dir, dataset, 'scaffold')
-        os.makedirs(dataset_save_dir)
+        os.makedirs(dataset_save_dir, exist_ok=True)
 
         # Convert preds and copy over preds and targets
         for fold in range(10):
