@@ -68,16 +68,13 @@ def load_preds_and_targets(preds_dir: str,
         preds = np.load(preds_path)
         targets = np.load(targets_path)
 
-        preds = [[p if not np.isnan(p) else None for p in pred] for pred in preds]
-        targets = [[t if not np.isnan(t) else None for t in target] for target in targets]
-
-        all_preds += preds
-        all_targets += targets
+        all_preds += preds.tolist()
+        all_targets += targets.tolist()
 
         num_folds += 1
 
     if num_folds not in [3, 10]:
-        # print(f'Did not find 3 or 10 preds/targets files for experiment "{experiment}" and dataset "{dataset}" and split type "{split_type}"')
+        print(f'Did not find 3 or 10 preds/targets files for experiment "{experiment}" and dataset "{dataset}" and split type "{split_type}"')
         return None, None
 
     return all_preds, all_targets
