@@ -48,7 +48,7 @@ COMPARISONS = [
     ('hyperopt_eval', 'compare_lsc_scaffold')
 ]
 
-EXPERIMENTS = {exp for comp in COMPARISONS for exp in comp}
+EXPERIMENTS = sorted({exp for comp in COMPARISONS for exp in comp})
 
 
 def load_preds_and_targets(preds_dir: str,
@@ -109,7 +109,6 @@ def wilcoxon_significance(preds_dir: str, split_type: str):
     print('dataset\t' + '\t'.join([f'{exp_1} vs {exp_2}' for exp_1, exp_2 in COMPARISONS]))
 
     for dataset in DATASETS:
-        print(dataset, end='\t')
         dataset_type = DATASETS[dataset]['type']
 
         # Compute values
@@ -132,6 +131,8 @@ def wilcoxon_significance(preds_dir: str, split_type: str):
             values = compute_values(dataset, preds, targets)
             experiment_to_values[experiment] = values
 
+        print(dataset, end='\t')
+
         # Compute p-values
         for experiment_1, experiment_2 in COMPARISONS:
             if 'compare_lsc_scaffold' in [experiment_1, experiment_2] and split_type != 'scaffold':
@@ -142,6 +143,9 @@ def wilcoxon_significance(preds_dir: str, split_type: str):
             if values_1 is None or values_2 is None:
                 print('Error', end='\t')
                 continue
+
+            # Remove nans
+            values_1, values_2 = zip(*[(v_1, v_2) for v_1, v_2 in zip(values_1, values_2) if not (np.isnan(v_1) or np.isnan(v_2))])
 
             # test if error of 1 is less than error of 2
             print(wilcoxon(values_1, values_2, alternative='less' if dataset_type == 'regression' else 'greater').pvalue, end='\t')
