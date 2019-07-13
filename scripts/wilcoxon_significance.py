@@ -143,11 +143,11 @@ def wilcoxon_significance(preds_dir: str, split_type: str):
 
             values_1, values_2 = experiment_to_values[experiment_1], experiment_to_values[experiment_2]
 
-            assert len(values_1) == len(values_2)
-
             if values_1 is None or values_2 is None:
                 print('Error', end='\t')
                 continue
+
+            assert len(values_1) == len(values_2)
 
             # Remove nans
             values_1, values_2 = zip(*[(v_1, v_2) for v_1, v_2 in zip(values_1, values_2) if not (np.isnan(v_1) or np.isnan(v_2))])

@@ -31,7 +31,7 @@ def welchs(mean1: List[float],  # mean performance across folds for each dataset
     ]
 
     # Print Welch's p-values
-    print(' | '.join(f'{pvalue:.4e}' for pvalue in pvalues))
+    print('\n'.join(f'{pvalue:.4e}' for pvalue in pvalues))
 
     # Chi-squared statistic
     chisquare = -2 * np.sum(np.log(pvalues))
