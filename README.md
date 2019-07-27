@@ -1,6 +1,8 @@
 # Property Prediction
 This repository contains message passing neural networks for molecular property prediction.
 
+### Please note: Confidence functionality is still under active development. Many features are not yet fully implemented.
+
 ## Table of Contents
 
 - [Requirements](#requirements)
