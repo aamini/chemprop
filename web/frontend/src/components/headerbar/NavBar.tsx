@@ -17,7 +17,10 @@ export class NavBar extends Component<NavProps> {
         return (
             <Header
                 style={{
-                    padding: 0,
+                    paddingLeft: 20,
+                    paddingRight: 0,
+                    paddingTop: 0,
+                    paddingBottom: 0,
                     backgroundColor: '#fff',
                     boxShadow: '8px 0px 4px #ccc',
                     maxHeight: 64
@@ -25,7 +28,7 @@ export class NavBar extends Component<NavProps> {
             >
                 <div
                     style={{
-                        maxWidth: page.width,
+                        // maxWidth: page.width,
                         float: 'none',
                         margin: 'auto'
                     }}
