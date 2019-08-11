@@ -27,7 +27,7 @@ def find_zinc(missing_path: str, zinc_dir: str, save_path: str):
 
     print(f'{len(missing)} missing zinc indices')
 
-    paths = [os.path.join(zinc_dir, fname) for fname in os.listdir(zinc_dir) if fname.endswith('.txt')]
+    paths = sorted([os.path.join(zinc_dir, fname) for fname in os.listdir(zinc_dir) if fname.endswith('.txt')])
 
     for path in paths:
         tranche = os.path.splitext(os.path.basename(path))[0]
