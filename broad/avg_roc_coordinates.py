@@ -4,7 +4,7 @@ import os
 
 import numpy as np
 from scipy import interp
-from sklearn.metrics import roc_curve
+from sklearn.metrics import roc_auc_score, roc_curve
 
 
 def avg_roc(dirname: str, num_trials: int, num_folds: int):
@@ -12,9 +12,10 @@ def avg_roc(dirname: str, num_trials: int, num_folds: int):
         trial_rocs = []
         for i in range(num_folds):
             with open(os.path.join(dirname, f'trial_{j}', f'fold_{i}', 'pred.csv')) as f:
-                pred = [float(row[1]) for row in csv.reader(f)]
+                pred = [float(row[1]) for row in list(csv.reader(f))[1:]]
             with open(os.path.join(dirname, f'trial_{j}', f'fold_{i}', 'true.csv')) as f:
-                true = [int(row[1]) for row in csv.reader(f)]
+                true = [float(row[1]) for row in list(csv.reader(f))[1:]]
+            print(f'Trial {j} auc = {roc_auc_score(true, pred)}')
             trial_rocs.append(roc_curve(true, pred))
 
         tprs = []
@@ -29,10 +30,10 @@ def avg_roc(dirname: str, num_trials: int, num_folds: int):
 
         with open(os.path.join(dirname, f'trial_{j}', 'roc.csv'), 'w') as f:
             writer = csv.writer(f)
-            writer.writerow(['fpr,', 'tpr'])
+            writer.writerow(['fpr', 'tpr'])
 
             for fpr, tpr in zip(base_fpr, mean_tprs):
-                writer.writerow(fpr, tpr)
+                writer.writerow([fpr, tpr])
 
 
 if __name__ == '__main__':
