@@ -35,12 +35,13 @@ def find_zinc(missing_path: str, zinc_dir: str, save_path: str):
         print(tranche)
 
         with open(path) as f:
-            rows = csv.DictReader(f, delimiter='\t')
+            rows = list(csv.DictReader(f, delimiter='\t'))
+            smiles_list = [row['smiles'] for row in rows]
 
             with Pool() as pool:
-                standard = pool.map(standardize_smiles, [row['smiles'] for row in rows])
+                standard = list(tqdm(pool.imap(standardize_smiles, smiles_list), total=len(smiles_list)))
 
-            for row, standard_smiles in zip(rows, standard):
+            for row, standard_smiles in tqdm(zip(rows, standard), total=len(rows)):
                 smiles = row['smiles']
 
                 zinc_row = {
