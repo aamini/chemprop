@@ -25,7 +25,7 @@ def find_zinc(missing_path: str, zinc_dir: str, save_path: str):
                 'standard': []
             }
 
-    print(f'{missing} missing zinc indices')
+    print(f'{len(missing)} missing zinc indices')
 
     paths = [os.path.join(zinc_dir, fname) for fname in os.listdir(zinc_dir) if fname.endswith('.txt')]
 
@@ -34,7 +34,7 @@ def find_zinc(missing_path: str, zinc_dir: str, save_path: str):
         print(tranche)
 
         with open(path) as f:
-            for row in tqdm(csv.DictReader(f)):
+            for row in tqdm(csv.DictReader(f, delimiter='\t')):
                 smiles = row['smiles']
 
                 zinc_row = {
