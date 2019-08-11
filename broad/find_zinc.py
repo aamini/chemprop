@@ -38,7 +38,7 @@ def find_zinc(missing_path: str, zinc_dir: str, save_path: str):
             rows = csv.DictReader(f, delimiter='\t')
 
             with Pool() as pool:
-                standard = pool.map(standard_smiles, [row['smiles'] for row in rows])
+                standard = pool.map(standardize_smiles, [row['smiles'] for row in rows])
 
             for row, standard_smiles in zip(rows, standard):
                 smiles = row['smiles']
