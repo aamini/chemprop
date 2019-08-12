@@ -45,12 +45,30 @@ def avg_roc(dirname: str, true_type: str, pred_type: str, num_trials: int, num_f
 
     plt.clf()
     base_fpr = np.linspace(0, 1, 101)
-    for tpr in all_tprs:
+    for i, tpr in enumerate(all_tprs):
         plt.plot(base_fpr, tpr, 'b', alpha=0.15)
+
+        with open(f'{dirname}/roc_ranking_{true_type}_with_{pred_type}_model_{i}.csv', 'w') as f:
+            writer = csv.writer(f)
+            writer.writerow(['false_positive_rate', 'true_positive_rate'])
+            for ff, tt in zip(base_fpr, tpr):
+                writer.writerow([ff, tt])
 
     all_tprs = np.array(all_tprs)
     mean_tprs = all_tprs.mean(axis=0)
     std = all_tprs.std(axis=0)
+
+    with open(f'{dirname}/roc_ranking_{true_type}_with_{pred_type}_model_mean.csv', 'w') as f:
+        writer = csv.writer(f)
+        writer.writerow(['false_positive_rate', 'true_positive_rate'])
+        for ff, tt in zip(base_fpr, mean_tprs):
+            writer.writerow([ff, tt])
+
+    with open(f'{dirname}/roc_ranking_{true_type}_with_{pred_type}_model_std.csv', 'w') as f:
+        writer = csv.writer(f)
+        writer.writerow(['false_positive_rate', 'true_positive_rate'])
+        for ff, tt in zip(base_fpr, std):
+            writer.writerow([ff, tt])
 
     tprs_upper = np.minimum(mean_tprs + std, 1)
     tprs_lower = mean_tprs - std
