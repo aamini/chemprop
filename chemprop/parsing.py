@@ -134,9 +134,9 @@ def add_train_args(parser: ArgumentParser):
     parser.add_argument('--config_path', type=str,
                         help='Path to a .json file containing arguments. Any arguments present in the config'
                              'file will override arguments specified via the command line or by the defaults.')
-    parser.add_argument('--inner_context_radius', type=int, default=3,
+    parser.add_argument('--inner_context_radius', type=int, default=4,
                         help='Inner radius for the context during node-level context prediction pretraining')
-    parser.add_argument('--outer_context_radius', type=int, default=6,
+    parser.add_argument('--outer_context_radius', type=int, default=7,
                         help='Outer radius for the context during node-level context prediction pretraining')
     parser.add_argument('--num_negatives_per_positive', type=int, default=1,
                         help='Number of negative substructure-context pairs for each positive pair'
@@ -167,7 +167,7 @@ def add_train_args(parser: ArgumentParser):
                         help='Dimensionality of hidden layers in MPN')
     parser.add_argument('--bias', action='store_true', default=False,
                         help='Whether to add bias to linear layers')
-    parser.add_argument('--depth', type=int, default=3,
+    parser.add_argument('--depth', type=int, default=5,
                         help='Number of message passing steps')
     parser.add_argument('--dropout', type=float, default=0.0,
                         help='Dropout probability')
