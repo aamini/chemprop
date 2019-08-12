@@ -386,8 +386,8 @@ def extract_substructure_and_context_subgraphs(smiles: str,
 
     # Note: Assumes MolGraph indexed the atoms and bonds in the same way
     for a in range(mol.GetNumAtoms()):
-        # Substructure subgraph (distance <= r1)
-        substructure_atoms = set(np.where(distances[a] <= args.inner_context_radius)[0])
+        # Substructure subgraph (distance <= depth)
+        substructure_atoms = set(np.where(distances[a] <= args.depth)[0])
         substructure_graph = extract_subgraph(substructure_atoms, bond_to_atom_pair, mol_graph)
 
         # Context subgraph (r1 <= distance <= r2)
