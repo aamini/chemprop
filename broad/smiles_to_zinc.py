@@ -24,12 +24,15 @@ def missing_smiles_to_zinc(missing_path: str, save_path: str):
     print(f'There are {len(missing_smiles)} smiles missing zinc ids')
 
     # Get the zinc ids corresponding to the smiles
+    smiles_to_zinc_mapping = {}
     with Pool() as pool:
-        smiles_to_zinc_mapping = dict(tqdm(pool.imap(smiles_to_zinc, missing_smiles), total=len(missing_smiles)))
+        for smiles, found_smiles_and_zinc in tqdm(pool.imap(smiles_to_zinc, missing_smiles), total=len(missing_smiles)):
+            # Updating smiles to zinc mapping with latest results
+            smiles_to_zinc_mapping[smiles] = found_smiles_and_zinc
 
-    # Save the smiles and zinc ids
-    with open(save_path, 'w') as f:
-        json.dump(smiles_to_zinc_mapping, f, indent=4, sort_keys=True)
+            # Save the smiles and zinc ids
+            with open(save_path, 'w') as f:
+                json.dump(smiles_to_zinc_mapping, f, indent=4, sort_keys=True)
 
 
 if __name__ == '__main__':
