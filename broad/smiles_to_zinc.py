@@ -6,11 +6,13 @@ from typing import List, Tuple
 
 import requests
 from tqdm import tqdm
+from urllib.parse import urlencode
 
 
 def smiles_to_zinc(smiles: str, count: int = 5) -> Tuple[str, List[Tuple[str, str]]]:
     # Find the zinc id corresponding to a smiles string
-    res = requests.get(f'http://zinc15.docking.org/substances.txt:smiles+zinc_id?structure-contains={smiles}&count={count}')
+    params = urlencode({'structure-contains': smiles, 'count': count})
+    res = requests.get('http://zinc15.docking.org/substances.txt:smiles+zinc_id', params=params)
     found_smiles_and_zinc = [line.split('\t') for line in res.text.split('\n')]  # [(smiles, zinc_id), (smiles, zinc_id), ...]
 
     return smiles, found_smiles_and_zinc
