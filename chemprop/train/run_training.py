@@ -23,6 +23,7 @@ import GPy
 from .evaluate import evaluate, evaluate_predictions
 from .predict import predict
 from .train import train
+from .confidence import confidence_estimator_builder
 from chemprop.data import StandardScaler
 from chemprop.data.utils import get_class_sizes, get_data, get_task_names, split_data
 from chemprop.models import build_model, train_residual_model
@@ -177,14 +178,8 @@ def run_training(args: Namespace, logger: Logger = None) -> List[float]:
     all_test_preds = np.zeros(
         (len(test_smiles), args.num_tasks, args.ensemble_size))
 
-    if args.confidence in ['gaussian', 'random_forest', 'conformal', 'boost']:
-        sum_last_hidden = np.zeros(
-            (len(val_data.smiles()), args.last_hidden_size))
-        sum_last_hidden_test = np.zeros(
-            (len(test_smiles), args.last_hidden_size))
-    
-    if args.confidence in ['nn']:
-        sum_test_confidence = np.zeros((len(test_smiles), args.num_tasks))
+    if args.confidence:
+        confidence_estimator = confidence_estimator_builder(args.confidence)
 
     # Train ensemble of models
     for model_idx in range(args.ensemble_size):
@@ -276,21 +271,13 @@ def run_training(args: Namespace, logger: Logger = None) -> List[float]:
         model = load_checkpoint(os.path.join(
             save_dir, 'model.pt'), cuda=args.cuda, logger=logger)
 
-        if args.confidence in ['nn']:
-            test_preds, test_confidence = predict(
-                model=model,
-                data=test_data,
-                batch_size=args.batch_size,
-                scaler=scaler,
-                confidence=True
-            )
-        else:
-            test_preds = predict(
-                model=model,
-                data=test_data,
-                batch_size=args.batch_size,
-                scaler=scaler,
-            )
+        test_preds = predict(
+            model=model,
+            data=test_data,
+            batch_size=args.batch_size,
+            scaler=scaler,
+        )
+
         test_scores = evaluate_predictions(
             preds=test_preds,
             targets=test_targets,
@@ -302,37 +289,15 @@ def run_training(args: Namespace, logger: Logger = None) -> List[float]:
 
         if len(test_preds) != 0:
             sum_test_preds += np.array(test_preds)
-
-            if args.confidence in ['nn']:
-                sum_test_confidence += np.array(test_confidence)
             all_test_preds[:, :, model_idx] = np.array(test_preds)
-
-        if args.confidence in ['gaussian', 'random_forest', 'conformal', 'boost']:
-            model.eval()
-            model.use_last_hidden = False
-
-            last_hidden = predict(
-                model=model,
-                data=val_data,
-                batch_size=args.batch_size,
-                scaler=None
-            )
-
-            sum_last_hidden += np.array(last_hidden)
-
-            last_hidden_test = predict(
-                model=model,
-                data=test_data,
-                batch_size=args.batch_size,
-                scaler=None
-            )
-
-            sum_last_hidden_test += np.array(last_hidden_test)
 
         # Average test score
         avg_test_score = np.nanmean(test_scores)
         info(f'Model {model_idx} test {args.metric} = {avg_test_score:.6f}')
         writer.add_scalar(f'test_{args.metric}', avg_test_score, 0)
+
+        if args.confidence:
+            confidence_estimator.process_model(model, predict, batch_size, scaler)
 
         if args.show_individual_scores:
             # Individual test scores
@@ -344,13 +309,6 @@ def run_training(args: Namespace, logger: Logger = None) -> List[float]:
 
     # Evaluate ensemble on test set
     avg_test_preds = (sum_test_preds / args.ensemble_size)
-
-    if args.confidence in ['gaussian', 'random_forest', 'conformal', 'boost']:
-        avg_last_hidden = sum_last_hidden / args.ensemble_size
-        avg_last_hidden_test = sum_last_hidden_test / args.ensemble_size
-
-        if args.dataset_type == 'regression':
-            transformed_val = scaler.transform(np.array(val_data.targets()))
 
     ensemble_scores = evaluate_predictions(
         preds=avg_test_preds.tolist(),
