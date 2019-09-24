@@ -10,8 +10,6 @@ from typing import List, Tuple, Union
 import forestci as fci
 import matplotlib.pyplot as plt
 import numpy as np
-from rdkit import Chem, DataStructs
-from rdkit.Chem import AllChem
 from sklearn.ensemble import RandomForestClassifier, RandomForestRegressor
 from tensorboardX import SummaryWriter
 import torch
@@ -23,39 +21,13 @@ import GPy
 from .evaluate import evaluate, evaluate_predictions
 from .predict import predict
 from .train import train
-from .confidence import confidence_estimator_builder
+from .confidence_estimator import confidence_estimator_builder
 from chemprop.data import StandardScaler
 from chemprop.data.utils import get_class_sizes, get_data, get_task_names, split_data
 from chemprop.models import build_model, train_residual_model
 from chemprop.nn_utils import param_count
 from chemprop.utils import build_optimizer, build_lr_scheduler, get_loss_func, get_metric_func, load_checkpoint,\
     makedirs, save_checkpoint
-
-
-def morgan_fingerprint(smiles: str, radius: int = 3, num_bits: int = 2048, use_counts: bool = False) -> np.ndarray:
-    """
-    Generates a morgan fingerprint for a smiles string.
-
-    :param smiles: A smiles string for a molecule.
-    :param radius: The radius of the fingerprint.
-    :param num_bits: The number of bits to use in the fingerprint.
-    :param use_counts: Whether to use counts or just a bit vector for the fingerprint
-    :return: A 1-D numpy array containing the morgan fingerprint.
-    """
-    if type(smiles) == str:
-        mol = Chem.MolFromSmiles(smiles)
-    else:
-        mol = smiles
-    if use_counts:
-        fp_vect = AllChem.GetHashedMorganFingerprint(
-            mol, radius, nBits=num_bits)
-    else:
-        fp_vect = AllChem.GetMorganFingerprintAsBitVect(
-            mol, radius, nBits=num_bits)
-    fp = np.zeros((1,))
-    DataStructs.ConvertToNumpyArray(fp_vect, fp)
-
-    return fp
 
 
 def run_training(args: Namespace, logger: Logger = None) -> List[float]:
@@ -175,8 +147,6 @@ def run_training(args: Namespace, logger: Logger = None) -> List[float]:
     # Set up test set evaluation
     test_smiles, test_targets = test_data.smiles(), test_data.targets()
     sum_test_preds = np.zeros((len(test_smiles), args.num_tasks))
-    all_test_preds = np.zeros(
-        (len(test_smiles), args.num_tasks, args.ensemble_size))
 
     if args.confidence:
         confidence_estimator = confidence_estimator_builder(args.confidence)
@@ -289,7 +259,6 @@ def run_training(args: Namespace, logger: Logger = None) -> List[float]:
 
         if len(test_preds) != 0:
             sum_test_preds += np.array(test_preds)
-            all_test_preds[:, :, model_idx] = np.array(test_preds)
 
         # Average test score
         avg_test_score = np.nanmean(test_scores)
@@ -297,7 +266,7 @@ def run_training(args: Namespace, logger: Logger = None) -> List[float]:
         writer.add_scalar(f'test_{args.metric}', avg_test_score, 0)
 
         if args.confidence:
-            confidence_estimator.process_model(model, predict, batch_size, scaler)
+            confidence_estimator.process_model(model, predict, scaler)
 
         if args.show_individual_scores:
             # Individual test scores
@@ -326,195 +295,130 @@ def run_training(args: Namespace, logger: Logger = None) -> List[float]:
         f'ensemble_test_{args.metric}', avg_ensemble_test_score, 0)
 
     targets = np.array(test_targets)
-    if args.confidence and args.dataset_type == 'regression':
-        if args.confidence == 'gaussian':
-            # TODO: Scale confidence to reflect scaled predictions.
-            predictions = np.ndarray(
-                shape=(len(test_smiles), args.num_tasks))
-            confidence = np.ndarray(
-                shape=(len(test_smiles), args.num_tasks))
 
-            for task in range(args.num_tasks):
-                kernel = GPy.kern.Linear(input_dim=args.last_hidden_size)
-                gaussian = GPy.models.SparseGPRegression(
-                    avg_last_hidden, transformed_val[:, task:task+1], kernel)
-                gaussian.optimize()
-
-                avg_test_preds, avg_test_var = gaussian.predict(
-                    avg_last_hidden_test)
-
-                # Scale Data
-                domain = np.max(avg_test_var) - np.min(avg_test_var)
-                # Shift.
-                avg_test_var = avg_test_var - np.min(avg_test_var)
-                # Scale domain to 1.
-                avg_test_var = avg_test_var / domain
-                # Apply log scale and flip.
-                avg_test_var = np.maximum(
-                    0, -np.log(avg_test_var + np.exp(-10)))
-
-                predictions[:, task:task+1] = avg_test_preds
-                confidence[:, task:task+1] = avg_test_var
-
-            predictions = scaler.inverse_transform(predictions)
-        elif args.confidence == 'random_forest':
-            # TODO: Scale confidence to reflect scaled predictions.
-            predictions = np.ndarray(
-                shape=(len(test_smiles), args.num_tasks))
-            confidence = np.ndarray(
-                shape=(len(test_smiles), args.num_tasks))
-
-            n_trees = 100
-            for task in range(args.num_tasks):
-                forest = RandomForestRegressor(n_estimators=n_trees)
-                forest.fit(avg_last_hidden, transformed_val[:, task])
-
-                avg_test_preds = forest.predict(avg_last_hidden_test)
-                predictions[:, task] = avg_test_preds
-
-                avg_test_var = fci.random_forest_error(
-                    forest, avg_last_hidden, avg_last_hidden_test) * (-1)
-                confidence[:, task] = avg_test_var
-
-            predictions = scaler.inverse_transform(predictions)
-        elif args.confidence == 'tanimoto':
-            predictions = avg_test_preds
-            confidence = np.ndarray(
-                shape=(len(test_smiles), args.num_tasks))
-
-            train_smiles_sfp = [morgan_fingerprint(s) for s in train_smiles]
-            for i in range(len(test_smiles)):
-                confidence[i, :] = np.ones((args.num_tasks)) * tanimoto(test_smiles[i], lambda x: max(x))
-        elif args.confidence == 'ensemble':
-            predictions = avg_test_preds
-            confidence = np.var(all_test_preds, axis=2) * -1
-        elif args.confidence == 'nn':
-            predictions = avg_test_preds
-            confidence = sum_test_confidence / args.ensemble_size * (-1)
-
-
-    if args.confidence and args.dataset_type == 'classification':
-        if args.confidence == 'gaussian':
-            predictions = np.ndarray(
-                shape=(len(test_smiles), args.num_tasks))
-            confidence = np.ndarray(
-                shape=(len(test_smiles), args.num_tasks))
-
-            val_targets = np.array(val_data.targets())
-
-            for task in range(args.num_tasks):
-                kernel = GPy.kern.Linear(input_dim=args.last_hidden_size)
-
-                mask = val_targets[:, task] != None
-                gaussian = GPy.models.GPClassification(
-                    avg_last_hidden[mask, :], val_targets[mask, task:task+1], kernel)
-                gaussian.optimize()
-
-                avg_test_preds, _ = gaussian.predict(
-                    avg_last_hidden_test)
-
-                predictions[:, task:task+1] = avg_test_preds
-                confidence[:, task:task+1] = np.maximum(avg_test_preds, 1 - avg_test_preds)
-        elif args.confidence == 'probability':
-            predictions = avg_test_preds
-            confidence = np.maximum(avg_test_preds, 1 - avg_test_preds)
-        elif args.confidence == 'random_forest':
-            predictions = np.ndarray(
-                shape=(len(test_smiles), args.num_tasks))
-            confidence = np.ndarray(
-                shape=(len(test_smiles), args.num_tasks))
-
-            val_targets = np.array(val_data.targets())
-
-            n_trees = 100
-            for task in range(args.num_tasks):
-                forest = RandomForestClassifier(n_estimators=n_trees)
-
-                mask = val_targets[:, task] != None
-                forest.fit(avg_last_hidden[mask, :], val_targets[mask, task])
-
-                avg_test_preds = forest.predict(avg_last_hidden_test)
-                predictions[:, task] = avg_test_preds
-
-                avg_test_var = fci.random_forest_error(
-                    forest, avg_last_hidden[mask, :], avg_last_hidden_test) * (-1)
-                confidence[:, task] = avg_test_var    
-        elif args.confidence == 'conformal':
-            predictions = avg_test_preds
-            confidence = np.ndarray(
-                shape=(len(test_smiles), args.num_tasks))
-
-            val_targets = np.array(val_data.targets())
-            for task in range(args.num_tasks):
-                non_conformity = np.ndarray(shape=(len(val_targets)))
-
-                for i in range(len(val_targets)):
-                    non_conformity[i] = kNN(avg_last_hidden[i, :], val_targets[i, task], avg_last_hidden, val_targets[:, task])
-                
-                for i in range(len(test_smiles)):
-                    alpha = kNN(avg_last_hidden_test[i, :], round(predictions[i, task]), avg_last_hidden, val_targets[:, task])
-
-                    if alpha == None:
-                        confidence[i, task] = 0
-                        continue
-
-                    non_null = non_conformity[non_conformity != None]
-                    confidence[i, task] = np.sum(non_null >= alpha) / len(non_null)
-        elif args.confidence == 'boost':        
-            # Calculate Tanimoto Distances
-            val_smiles = val_data.smiles()
-            val_max_tanimotos = np.ndarray(shape=(len(val_smiles), 1))
-            val_avg_tanimotos = np.ndarray(shape=(len(val_smiles), 1))
-            val_new_substructs = np.ndarray(shape=(len(val_smiles), 1))
-            test_max_tanimotos = np.ndarray(shape=(len(test_smiles), 1))
-            test_avg_tanimotos = np.ndarray(shape=(len(test_smiles), 1))
-            test_new_substructs = np.ndarray(shape=(len(test_smiles), 1))
-
-            train_smiles_sfp = [morgan_fingerprint(s) for s in train_data.smiles()]
-            train_smiles_union = [1 if 1 in [train_smiles_sfp[i][j] for i in range(len(train_smiles_sfp))] else 0 for j in range(len(train_smiles_sfp[0]))]
-            for i in range(len(val_smiles)):
-                temp_tanimotos = tanimoto(val_smiles[i], train_smiles_sfp, lambda x: x)
-                val_max_tanimotos[i, 0] = max(temp_tanimotos)
-                val_avg_tanimotos[i, 0] = sum(temp_tanimotos)/len(temp_tanimotos)
-
-                smiles = Chem.MolToSmiles(Chem.MolFromSmiles(val_smiles[i]))
-                fp = morgan_fingerprint(smiles)
-                val_new_substructs[i, 0] = sum([1 if fp[i] and not train_smiles_union[i] else 0 for i in range(len(fp))])
-            for i in range(len(test_smiles)):
-                temp_tanimotos = tanimoto(test_smiles[i], train_smiles_sfp, lambda x: x)
-                test_max_tanimotos[i, 0] = max(temp_tanimotos)
-                test_avg_tanimotos[i, 0] = sum(temp_tanimotos)/len(temp_tanimotos)
-
-                smiles = Chem.MolToSmiles(Chem.MolFromSmiles(test_smiles[i]))
-                fp = morgan_fingerprint(smiles)
-                test_new_substructs[i, 0] = sum([1 if fp[i] and not train_smiles_union[i] else 0 for i in range(len(fp))])
-            
-            model.use_last_hidden = True
-            original_preds = predict(
-                model=model,
-                data=val_data,
-                batch_size=args.batch_size,
-                scaler=None
-            )
-            # Create and Train New Model
-            features = (original_preds, val_max_tanimotos, val_avg_tanimotos, val_new_substructs)
-            new_model = train_residual_model(np.concatenate(features, axis=1),
-                                             original_preds,
-                                             val_data.targets(),
-                                             args.epochs)
-
-            features = (avg_test_preds, test_max_tanimotos, test_avg_tanimotos, test_new_substructs)
-            # confidence = new_model(np.concatenate(features, axis=1), 
-                                    # avg_test_preds).detach().numpy()
-            predictions = avg_test_preds
-            confidence = np.abs(avg_test_preds - 0.5)
-            # print(targets)
-            # targets = np.extract(correctness > avg_correctness, targets).reshape((-1, args.num_tasks))
-            # print(targets)
-            # targets = (np.abs(avg_test_preds - targets) < 0.5) * 1
+    # if args.confidence and args.dataset_type == 'classification':
+    #     if args.confidence == 'gaussian':
+    #         predictions = np.ndarray(
+    #             shape=(len(test_smiles), args.num_tasks))
+    #         confidence = np.ndarray(
+    #             shape=(len(test_smiles), args.num_tasks))
+    #
+    #         val_targets = np.array(val_data.targets())
+    #
+    #         for task in range(args.num_tasks):
+    #             kernel = GPy.kern.Linear(input_dim=args.last_hidden_size)
+    #
+    #             mask = val_targets[:, task] != None
+    #             gaussian = GPy.models.GPClassification(
+    #                 avg_last_hidden[mask, :], val_targets[mask, task:task+1], kernel)
+    #             gaussian.optimize()
+    #
+    #             avg_test_preds, _ = gaussian.predict(
+    #                 avg_last_hidden_test)
+    #
+    #             predictions[:, task:task+1] = avg_test_preds
+    #             confidence[:, task:task+1] = np.maximum(avg_test_preds, 1 - avg_test_preds)
+    #     elif args.confidence == 'probability':
+    #         predictions = avg_test_preds
+    #         confidence = np.maximum(avg_test_preds, 1 - avg_test_preds)
+    #     elif args.confidence == 'random_forest':
+    #         predictions = np.ndarray(
+    #             shape=(len(test_smiles), args.num_tasks))
+    #         confidence = np.ndarray(
+    #             shape=(len(test_smiles), args.num_tasks))
+    #
+    #         val_targets = np.array(val_data.targets())
+    #
+    #         n_trees = 100
+    #         for task in range(args.num_tasks):
+    #             forest = RandomForestClassifier(n_estimators=n_trees)
+    #
+    #             mask = val_targets[:, task] != None
+    #             forest.fit(avg_last_hidden[mask, :], val_targets[mask, task])
+    #
+    #             avg_test_preds = forest.predict(avg_last_hidden_test)
+    #             predictions[:, task] = avg_test_preds
+    #
+    #             avg_test_var = fci.random_forest_error(
+    #                 forest, avg_last_hidden[mask, :], avg_last_hidden_test) * (-1)
+    #             confidence[:, task] = avg_test_var
+    #     elif args.confidence == 'conformal':
+    #         predictions = avg_test_preds
+    #         confidence = np.ndarray(
+    #             shape=(len(test_smiles), args.num_tasks))
+    #
+    #         val_targets = np.array(val_data.targets())
+    #         for task in range(args.num_tasks):
+    #             non_conformity = np.ndarray(shape=(len(val_targets)))
+    #
+    #             for i in range(len(val_targets)):
+    #                 non_conformity[i] = kNN(avg_last_hidden[i, :], val_targets[i, task], avg_last_hidden, val_targets[:, task])
+    #
+    #             for i in range(len(test_smiles)):
+    #                 alpha = kNN(avg_last_hidden_test[i, :], round(predictions[i, task]), avg_last_hidden, val_targets[:, task])
+    #
+    #                 if alpha == None:
+    #                     confidence[i, task] = 0
+    #                     continue
+    #
+    #                 non_null = non_conformity[non_conformity != None]
+    #                 confidence[i, task] = np.sum(non_null >= alpha) / len(non_null)
+    #     elif args.confidence == 'boost':
+    #         # Calculate Tanimoto Distances
+    #         val_smiles = val_data.smiles()
+    #         val_max_tanimotos = np.ndarray(shape=(len(val_smiles), 1))
+    #         val_avg_tanimotos = np.ndarray(shape=(len(val_smiles), 1))
+    #         val_new_substructs = np.ndarray(shape=(len(val_smiles), 1))
+    #         test_max_tanimotos = np.ndarray(shape=(len(test_smiles), 1))
+    #         test_avg_tanimotos = np.ndarray(shape=(len(test_smiles), 1))
+    #         test_new_substructs = np.ndarray(shape=(len(test_smiles), 1))
+    #
+    #         train_smiles_sfp = [morgan_fingerprint(s) for s in train_data.smiles()]
+    #         train_smiles_union = [1 if 1 in [train_smiles_sfp[i][j] for i in range(len(train_smiles_sfp))] else 0 for j in range(len(train_smiles_sfp[0]))]
+    #         for i in range(len(val_smiles)):
+    #             temp_tanimotos = tanimoto(val_smiles[i], train_smiles_sfp, lambda x: x)
+    #             val_max_tanimotos[i, 0] = max(temp_tanimotos)
+    #             val_avg_tanimotos[i, 0] = sum(temp_tanimotos)/len(temp_tanimotos)
+    #
+    #             smiles = Chem.MolToSmiles(Chem.MolFromSmiles(val_smiles[i]))
+    #             fp = morgan_fingerprint(smiles)
+    #             val_new_substructs[i, 0] = sum([1 if fp[i] and not train_smiles_union[i] else 0 for i in range(len(fp))])
+    #         for i in range(len(test_smiles)):
+    #             temp_tanimotos = tanimoto(test_smiles[i], train_smiles_sfp, lambda x: x)
+    #             test_max_tanimotos[i, 0] = max(temp_tanimotos)
+    #             test_avg_tanimotos[i, 0] = sum(temp_tanimotos)/len(temp_tanimotos)
+    #
+    #             smiles = Chem.MolToSmiles(Chem.MolFromSmiles(test_smiles[i]))
+    #             fp = morgan_fingerprint(smiles)
+    #             test_new_substructs[i, 0] = sum([1 if fp[i] and not train_smiles_union[i] else 0 for i in range(len(fp))])
+    #
+    #         model.use_last_hidden = True
+    #         original_preds = predict(
+    #             model=model,
+    #             data=val_data,
+    #             batch_size=args.batch_size,
+    #             scaler=None
+    #         )
+    #         # Create and Train New Model
+    #         features = (original_preds, val_max_tanimotos, val_avg_tanimotos, val_new_substructs)
+    #         new_model = train_residual_model(np.concatenate(features, axis=1),
+    #                                          original_preds,
+    #                                          val_data.targets(),
+    #                                          args.epochs)
+    #
+    #         features = (avg_test_preds, test_max_tanimotos, test_avg_tanimotos, test_new_substructs)
+    #         # confidence = new_model(np.concatenate(features, axis=1),
+    #                                 # avg_test_preds).detach().numpy()
+    #         predictions = avg_test_preds
+    #         confidence = np.abs(avg_test_preds - 0.5)
+    #         # print(targets)
+    #         # targets = np.extract(correctness > avg_correctness, targets).reshape((-1, args.num_tasks))
+    #         # print(targets)
+    #         # targets = (np.abs(avg_test_preds - targets) < 0.5) * 1
             
 
     if args.confidence:
+        predictions, confidence = confidence_estimator.compute_confidence(avg_test_preds)
         accuracy_log = {}
         if args.save_confidence:
             f = open(args.save_confidence, 'w+')
@@ -543,15 +447,6 @@ def run_training(args: Namespace, logger: Logger = None) -> List[float]:
 
     return ensemble_scores
 
-def tanimoto(smile, train_smiles_sfp, operation):
-    smiles = Chem.MolToSmiles(Chem.MolFromSmiles(smile))
-    fp = morgan_fingerprint(smiles)
-    morgan_sim = []
-    for sfp in train_smiles_sfp:
-        tsim = np.dot(fp, sfp) / (fp.sum() +
-                                    sfp.sum() - np.dot(fp, sfp))
-        morgan_sim.append(tsim)
-    return operation(morgan_sim)
 
 def confidence_visualizations(args: Namespace,
                               predictions: List[Union[float, int]] = [],
