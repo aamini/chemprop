@@ -11,15 +11,13 @@ def confidence_estimator_builder(confidence_method: str):
         'nn': NNEstimator,
         'gaussian': GaussianProcessEstimator,
         'random_forest': RandomForestEstimator,
-        'conformal': ConformalEstimator,
-        'boost': BoostEstimator,
         'tanimoto': TanimotoEstimator
     }[confidence_method]
 
 
 class ConfidenceEstimator:
-    def __init__(self, dataset_type: str, val_data, test_data, scaler, args):
-        self.dataset_type = dataset_type
+    def __init__(self, train_data, val_data, test_data, scaler, args):
+        self.train_data = train_data
         self.val_data = val_data
         self.test_data = test_data
         self.scaler = scaler
@@ -33,8 +31,8 @@ class ConfidenceEstimator:
 
 
 class DroppingEstimator(ConfidenceEstimator):
-    def __init__(self, dataset_type: str, val_data, test_data, scaler, args):
-        super().__init__(dataset_type, val_data, test_data, scaler, args)
+    def __init__(self, train_data, val_data, test_data, scaler, args):
+        super().__init__(train_data, val_data, test_data, scaler, args)
 
         self.sum_last_hidden = np.zeros(
             (len(self.val_data.smiles()), self.args.last_hidden_size))
@@ -75,8 +73,8 @@ class DroppingEstimator(ConfidenceEstimator):
 
 
 class NNEstimator(ConfidenceEstimator):
-    def __init__(self, dataset_type: str, val_data, test_data, scaler, args):
-        super().__init__(dataset_type, val_data, test_data, scaler, args)
+    def __init__(self, train_data, val_data, test_data, scaler, args):
+        super().__init__(train_data, val_data, test_data, scaler, args)
 
         self.sum_test_confidence = np.zeros(
             (len(test_data.smiles()), args.num_tasks))
@@ -110,7 +108,7 @@ class GaussianProcessEstimator(DroppingEstimator):
                 shape=(len(self.test_data.smiles()), self.args.num_tasks))
 
             for task in range(self.args.num_tasks):
-                kernel = GPy.kern.Linear(input_dim=args.last_hidden_size)
+                kernel = GPy.kern.Linear(input_dim=self.args.last_hidden_size)
                 gaussian = GPy.models.SparseGPRegression(
                     avg_last_hidden,
                     transformed_val[:, task:task + 1], kernel)
@@ -161,17 +159,9 @@ class RandomForestEstimator(DroppingEstimator):
         return predictions, confidence
 
 
-class ConformalEstimator(DroppingEstimator):
-    pass
-
-
-class BoostEstimator(DroppingEstimator):
-    pass
-
-
 class EnsembleEstimator(ConfidenceEstimator):
-    def __init__(self, dataset_type: str, val_data, test_data, scaler, args):
-        super().__init__(dataset_type, val_data, test_data, scaler, args)
+    def __init__(self, train_data, val_data, test_data, scaler, args):
+        super().__init__(train_data, val_data, test_data, scaler, args)
         self.all_test_preds = None
 
     def process_model(self, model, predict):
@@ -205,6 +195,15 @@ class TanimotoEstimator(ConfidenceEstimator):
                 test_smiles[i], train_smiles_sfp, lambda x: max(x))
 
         return test_predictions, confidence
+
+
+# Classification methods.
+class ConformalEstimator(DroppingEstimator):
+    pass
+
+
+class BoostEstimator(DroppingEstimator):
+    pass
 
 
 def morgan_fingerprint(smiles: str, radius: int = 3, num_bits: int = 2048,

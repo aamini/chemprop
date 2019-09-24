@@ -149,7 +149,7 @@ def run_training(args: Namespace, logger: Logger = None) -> List[float]:
     sum_test_preds = np.zeros((len(test_smiles), args.num_tasks))
 
     if args.confidence:
-        confidence_estimator = confidence_estimator_builder(args.confidence)
+        confidence_estimator = confidence_estimator_builder(args.confidence)(train_data, val_data, test_data, scaler, args)
 
     # Train ensemble of models
     for model_idx in range(args.ensemble_size):
@@ -266,7 +266,7 @@ def run_training(args: Namespace, logger: Logger = None) -> List[float]:
         writer.add_scalar(f'test_{args.metric}', avg_test_score, 0)
 
         if args.confidence:
-            confidence_estimator.process_model(model, predict, scaler)
+            confidence_estimator.process_model(model, predict)
 
         if args.show_individual_scores:
             # Individual test scores
