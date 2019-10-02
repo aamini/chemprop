@@ -17,6 +17,7 @@ class EvaluationMethod:
         evaluation = self.evaluate(data)
 
         sns.set()
+
         self._visualize(task, evaluation)
 
 
@@ -87,7 +88,7 @@ class Scatter(EvaluationMethod):
         return np.abs(y)
 
     def _visualize(self, task, evaluation):
-        plt.scatter(evaluation['confidence'], evaluation['abs_error'])
+        plt.scatter(evaluation['confidence'], evaluation['abs_error'], s=0.3)
         plt.plot(evaluation['confidence'], evaluation['best_fit_y'])
 
         plt.xlabel(self.x_axis_label)

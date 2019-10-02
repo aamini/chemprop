@@ -42,23 +42,27 @@ def predict(model: nn.Module,
 
         batch_preds = batch_preds.data.cpu().numpy()
 
-        # Inverse scale if regression
-        if scaler is not None:
-            batch_preds = scaler.inverse_transform(batch_preds)
-
         # Collect vectors
         batch_preds = batch_preds.tolist()
         preds.extend(batch_preds)
-    
+
     if model.confidence:
         p = []
         c = []
         for i in range(len(preds)):
             p.append([preds[i][j] for j in range(len(preds[i])) if j % 2 == 0])
             c.append([preds[i][j] for j in range(len(preds[i])) if j % 2 == 1])
-        
+
+        if scaler is not None:
+            p = scaler.inverse_transform(p).tolist()
+            c = (scaler.stds**2 * c).tolist()
+
         if confidence:
             return p, c
+
         return p
+
+    if scaler is not None:
+        preds = scaler.inverse_transform(preds).tolist()
 
     return preds

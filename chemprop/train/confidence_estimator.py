@@ -31,6 +31,9 @@ class ConfidenceEstimator:
     def compute_confidence(self, test_predictions):
         pass
 
+    def _scale_confidence(self, confidence):
+        return self.scaler.stds * confidence
+
 
 class DroppingEstimator(ConfidenceEstimator):
     def __init__(self, train_data, val_data, test_data, scaler, args):
@@ -94,8 +97,9 @@ class NNEstimator(ConfidenceEstimator):
             self.sum_test_confidence += np.array(test_confidence)
 
     def compute_confidence(self, test_predictions):
-        return test_predictions, \
-               self.sum_test_confidence / self.args.ensemble_size
+        # print(test_predictions, np.sqrt(self.sum_test_confidence / self.args.ensemble_size))
+        # print("HI")
+        return test_predictions, np.sqrt(self.sum_test_confidence / self.args.ensemble_size)
 
 
 class GaussianProcessEstimator(DroppingEstimator):
@@ -103,42 +107,36 @@ class GaussianProcessEstimator(DroppingEstimator):
         avg_last_hidden, avg_last_hidden_test, transformed_val = self._compute_hidden_vals()
         super().compute_confidence(test_predictions)
 
-        if self.args.dataset_type == "regression":
-            predictions = np.ndarray(
-                shape=(len(self.test_data.smiles()), self.args.num_tasks))
-            confidence = np.ndarray(
-                shape=(len(self.test_data.smiles()), self.args.num_tasks))
+        predictions = np.ndarray(
+            shape=(len(self.test_data.smiles()), self.args.num_tasks))
+        confidence = np.ndarray(
+            shape=(len(self.test_data.smiles()), self.args.num_tasks))
 
-            for task in range(self.args.num_tasks):
-                kernel = GPy.kern.Linear(input_dim=self.args.last_hidden_size)
-                gaussian = GPy.models.SparseGPRegression(
-                    avg_last_hidden,
-                    transformed_val[:, task:task + 1], kernel)
-                gaussian.optimize()
+        for task in range(self.args.num_tasks):
+            kernel = GPy.kern.Linear(input_dim=self.args.last_hidden_size)
+            gaussian = GPy.models.SparseGPRegression(
+                avg_last_hidden,
+                transformed_val[:, task:task + 1], kernel)
+            gaussian.optimize()
 
-                avg_test_preds, avg_test_var = gaussian.predict(
-                    avg_last_hidden_test)
+            avg_test_preds, avg_test_var = gaussian.predict(
+                avg_last_hidden_test)
 
-                # # Scale Data
-                # domain = np.max(avg_test_var) - np.min(avg_test_var)
-                # # Shift.
-                # avg_test_var = avg_test_var - np.min(avg_test_var)
-                # # Scale domain to 1.
-                # avg_test_var = avg_test_var / domain
-                # # Apply log scale and flip.
-                # avg_test_var = np.maximum(
-                #     0, -np.log(avg_test_var + np.exp(-10)))
+            # # Scale Data
+            # domain = np.max(avg_test_var) - np.min(avg_test_var)
+            # # Shift.
+            # avg_test_var = avg_test_var - np.min(avg_test_var)
+            # # Scale domain to 1.
+            # avg_test_var = avg_test_var / domain
+            # # Apply log scale and flip.
+            # avg_test_var = np.maximum(
+            #     0, -np.log(avg_test_var + np.exp(-10)))
 
-                predictions[:, task:task + 1] = avg_test_preds
-                confidence[:, task:task + 1] = avg_test_var
+            predictions[:, task:task + 1] = avg_test_preds
+            confidence[:, task:task + 1] = np.sqrt(avg_test_var)
 
-            predictions = self.scaler.inverse_transform(predictions)
-            confidence = (self.scaler.inverse_transform(predictions +
-                                                        confidence) -
-                          self.scaler.inverse_transform(predictions -
-                                                        confidence))/2
-
-            return predictions, confidence
+        predictions = self.scaler.inverse_transform(predictions)
+        return predictions, self._scale_confidence(confidence)
 
 
 class RandomForestEstimator(DroppingEstimator):
@@ -160,15 +158,11 @@ class RandomForestEstimator(DroppingEstimator):
 
             avg_test_var = fci.random_forest_error(
                 forest, avg_last_hidden, avg_last_hidden_test)
-            confidence[:, task] = avg_test_var
+            confidence[:, task] = np.sqrt(avg_test_var)
 
         predictions = self.scaler.inverse_transform(predictions)
-        confidence = (self.scaler.inverse_transform(predictions +
-                                                    confidence) -
-                        self.scaler.inverse_transform(predictions -
-                                                    confidence))/2
 
-        return predictions, confidence
+        return predictions,  self._scale_confidence(confidence)
 
 
 class EnsembleEstimator(ConfidenceEstimator):
@@ -191,7 +185,9 @@ class EnsembleEstimator(ConfidenceEstimator):
             self.all_test_preds = reshaped_test_preds
 
     def compute_confidence(self, test_predictions):
-        return test_predictions, np.var(self.all_test_preds, axis=2)
+        confidence = np.sqrt(np.var(self.all_test_preds, axis=2))
+
+        return test_predictions, self._scale_confidence(confidence)
 
 
 class TanimotoEstimator(ConfidenceEstimator):

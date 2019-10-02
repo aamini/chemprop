@@ -34,7 +34,7 @@ def train_residual_model(train_inputs, old_preds, train_targets, epochs):
         for i in range(len(train_inputs)):
             model.zero_grad()
             preds = model(train_inputs[i:i+1], old_preds[i:i+1])
-            loss = loss_fn(preds, 
+            loss = loss_fn(preds,
                            from_numpy((np.abs(np.array(train_targets[i:i+1]) - 
                                        np.array(old_preds[i:i+1])) < 0.5) * 1).float())
             loss.backward()
