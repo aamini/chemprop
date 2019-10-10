@@ -164,13 +164,14 @@ class Boxplot(EvaluationMethod):
         errors_by_confidence = evaluation["errors_by_confidence"]
         x_vals = list(np.linspace(evaluation["min_confidence"],
                                   evaluation["max_confidence"],
-                                  num=len(errors_by_confidence)+2))[1:-1]
-        plt.boxplot(errors_by_confidence, positions=x_vals)
+                                  num=len(errors_by_confidence),
+                                  endpoint=False) + (evaluation["max_confidence"] - evaluation["min_confidence"])/(len(errors_by_confidence) * 2))
+        plt.boxplot(errors_by_confidence, positions=x_vals, widths=(0.02))
 
         names = (
             f'{len(errors_by_confidence[i])} points' for i in range(10))
         plt.xticks(x_vals, names)
-
+        plt.xlim((evaluation["min_confidence"], evaluation["max_confidence"]))
         Scatter().visualize(task, evaluation["data"])
 
 
