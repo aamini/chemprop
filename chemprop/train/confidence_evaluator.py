@@ -4,6 +4,7 @@ import json
 import numpy as np
 import matplotlib.pyplot as plt
 import seaborn as sns
+from scipy import stats
 
 
 class EvaluationMethod:
@@ -65,30 +66,28 @@ class Scatter(EvaluationMethod):
     def __init__(self):
         self.name = "scatter"
         self.x_axis_label = 'Confidence'
-        self.y_axis_label = 'Absolute Value of Error'
+        self.y_axis_label = 'Error'
 
     def evaluate(self, data):
         confidence = [self._x_filter(set_["confidence"])
                       for set_ in data["sets_by_confidence"]]
-        abs_error = [self._y_filter(set_["error"])
-                     for set_ in data["sets_by_confidence"]]
+        error = [self._y_filter(set_["error"])
+                 for set_ in data["sets_by_confidence"]]
 
-        best_fit_y = np.poly1d(np.polyfit(confidence,
-                                          abs_error,
-                                          1))(confidence)
+        slope, intercept, _, _, _ = stats.linregress(confidence, error)
 
         return {"confidence": confidence,
-                "abs_error": abs_error,
-                "best_fit_y": best_fit_y}
+                "error": error,
+                "best_fit_y": slope * np.array(confidence) + intercept}
 
     def _x_filter(self, x):
         return x
 
     def _y_filter(self, y):
-        return np.abs(y)
+        return y
 
     def _visualize(self, task, evaluation):
-        plt.scatter(evaluation['confidence'], evaluation['abs_error'], s=0.3)
+        plt.scatter(evaluation['confidence'], evaluation['error'], s=0.3)
         plt.plot(evaluation['confidence'], evaluation['best_fit_y'])
 
         plt.xlabel(self.x_axis_label)
@@ -96,6 +95,16 @@ class Scatter(EvaluationMethod):
         plt.title(task)
 
         plt.show()
+
+
+class AbsScatter(Scatter):
+    def __init__(self):
+        self.name = "abs_scatter"
+        self.x_axis_label = 'Confidence'
+        self.y_axis_label = 'Absolute Value of Error'
+
+    def _y_filter(self, y):
+        return np.abs(y)
 
 
 class LogScatter(Scatter):
@@ -118,10 +127,10 @@ class Spearman(EvaluationMethod):
     def evaluate(self, data):
         confidence = [set_["confidence"]
                       for set_ in data["sets_by_confidence"]]
-        abs_error = [set_["error"]
-                     for set_ in data["sets_by_confidence"]]
+        error = [set_["error"]
+                 for set_ in data["sets_by_confidence"]]
 
-        rho, p = stats.spearmanr(confidence, abs_error)
+        rho, p = stats.spearmanr(confidence, np.abs(error))
 
         return {"rho": rho, "p": p}
 
@@ -130,8 +139,43 @@ class Spearman(EvaluationMethod):
         print(task, "-", "Spearman p-value:", evaluation["p"])
 
 
+class Boxplot(EvaluationMethod):
+    def __init__(self):
+        self.name = "boxplot"
+
+    def evaluate(self, data):
+        errors_by_confidence = [[] for _ in range(10)]
+
+        min_confidence = data["sets_by_confidence"][-1]["confidence"]
+        max_confidence = data["sets_by_confidence"][0]["confidence"]
+        confidence_range = max_confidence - min_confidence
+        print(max_confidence, min_confidence, confidence_range)
+        for pair in data["sets_by_confidence"]:
+            errors_by_confidence[min(
+                int((pair["confidence"] - min_confidence)//(confidence_range / 10)),
+                9)].append(pair["error"])
+
+        return {"errors_by_confidence": errors_by_confidence,
+                "min_confidence": min_confidence,
+                "max_confidence": max_confidence,
+                "data": data}
+
+    def _visualize(self, task, evaluation):
+        errors_by_confidence = evaluation["errors_by_confidence"]
+        x_vals = list(np.linspace(evaluation["min_confidence"],
+                                  evaluation["max_confidence"],
+                                  num=len(errors_by_confidence)+2))[1:-1]
+        plt.boxplot(errors_by_confidence, positions=x_vals)
+
+        names = (
+            f'{len(errors_by_confidence[i])} points' for i in range(10))
+        plt.xticks(x_vals, names)
+
+        Scatter().visualize(task, evaluation["data"])
+
+
 class ConfidenceEvaluator:
-    methods = [Cutoffs(), Scatter(), LogScatter(), Spearman()]
+    methods = [Cutoffs(), AbsScatter(), LogScatter(), Spearman(), Boxplot()]
 
     @staticmethod
     def save(predictions, targets, confidence, args):
@@ -145,7 +189,7 @@ class ConfidenceEvaluator:
             task_predictions = np.extract(mask, predictions[:, task])
             task_targets = np.extract(mask, targets[:, task])
             task_confidence = np.extract(mask, confidence[:, task])
-            task_error = list(np.abs(task_predictions - task_targets))
+            task_error = list(task_predictions - task_targets)
 
             task_sets = [{"prediction": task_set[0],
                           "target": task_set[1],
@@ -161,7 +205,7 @@ class ConfidenceEvaluator:
                                         reverse=True)
 
             sets_by_error = sorted(task_sets,
-                                   key=lambda pair: pair["error"],
+                                   key=lambda pair: np.abs(pair["error"]),
                                    reverse=True)
 
             log[args.task_names[task]] = {
