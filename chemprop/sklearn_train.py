@@ -60,7 +60,7 @@ def single_task_sklearn(model,
 
         test_preds = predict(
             model=model,
-            model_type=args.model,
+            model_type=args.model_type,
             features=test_features
         )
         test_targets = [[target] for target in test_targets]
@@ -99,7 +99,7 @@ def multi_task_sklearn(model,
 
     test_preds = predict(
         model=model,
-        model_type=args.model,
+        model_type=args.model_type,
         features=test_data.features()
     )
 
@@ -128,7 +128,7 @@ def run_sklearn(args: Namespace, logger: Logger = None) -> List[float]:
     debug('Loading data')
     data = get_data(path=args.data_path)
 
-    if args.model == 'svm' and data.num_tasks() != 1:
+    if args.model_type == 'svm' and data.num_tasks() != 1:
         raise ValueError(f'SVM can only handle single-task data but found {data.num_tasks()} tasks')
 
     debug(f'Splitting data with seed {args.seed}')
@@ -145,19 +145,19 @@ def run_sklearn(args: Namespace, logger: Logger = None) -> List[float]:
 
     debug('Building model')
     if args.dataset_type == 'regression':
-        if args.model == 'random_forest':
+        if args.model_type == 'random_forest':
             model = RandomForestRegressor(n_estimators=args.num_trees, n_jobs=-1)
-        elif args.model == 'svm':
+        elif args.model_type == 'svm':
             model = SVR()
         else:
-            raise ValueError(f'Model type "{args.model}" not supported')
+            raise ValueError(f'Model type "{args.model_type}" not supported')
     elif args.dataset_type == 'classification':
-        if args.model == 'random_forest':
+        if args.model_type == 'random_forest':
             model = RandomForestClassifier(n_estimators=args.num_trees, n_jobs=-1, class_weight=args.class_weight)
-        elif args.model == 'svm':
+        elif args.model_type == 'svm':
             model = SVC()
         else:
-            raise ValueError(f'Model type "{args.model}" not supported')
+            raise ValueError(f'Model type "{args.model_type}" not supported')
     else:
         raise ValueError(f'Dataset type "{args.dataset_type}" not supported')
 

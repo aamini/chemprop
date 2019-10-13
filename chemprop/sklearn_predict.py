@@ -6,6 +6,7 @@ from tqdm import tqdm
 
 from chemprop.data.utils import get_data, get_task_names
 from chemprop.features import get_features_generator
+from chemprop.sklearn_train import predict
 from chemprop.utils import makedirs
 
 
@@ -26,12 +27,11 @@ def predict_sklearn(args: Namespace):
         model = pickle.load(f)
 
     print('Predicting')
-    # preds = model.predict_proba(data.features())
-    preds = model.decision_function(data.features())
-    import pdb; pdb.set_trace()
-
-    if data.num_tasks() == 1:
-        preds = [[pred] for pred in preds]
+    preds = predict(
+        model=model,
+        model_type=args.model_type,
+        features=data.features()
+    )
 
     print('Saving predictions')
     makedirs(args.preds_path, isfile=True)
