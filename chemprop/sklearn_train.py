@@ -113,29 +113,23 @@ def run_sklearn(args: Namespace, logger: Logger = None) -> List[float]:
         for datapoint in tqdm(dataset, total=len(dataset)):
             datapoint.set_features(morgan_fingerprint(mol=datapoint.smiles, radius=args.radius, num_bits=args.num_bits))
 
-    # Load or build model
-    if args.checkpoint_paths is not None:
-        if len(args.checkpoint_paths) > 1:
-            raise ValueError(f'Can only handle at most 1 checkpoint path but found {len(args.checkpoint_paths)}')
-
-        model = pickle.load(args.checkpoint_path)
-    else:
-        if args.dataset_type == 'regression':
-            if args.model == 'random_forest':
-                model = RandomForestRegressor(n_estimators=args.num_trees, n_jobs=-1)
-            elif args.model == 'svm':
-                model = SVR()
-            else:
-                raise ValueError(f'Model type "{args.model}" not supported')
-        elif args.dataset_type == 'classification':
-            if args.model == 'random_forest':
-                model = RandomForestClassifier(n_estimators=args.num_trees, n_jobs=-1, class_weight=args.class_weight)
-            elif args.model == 'svm':
-                model = SVC()
-            else:
-                raise ValueError(f'Model type "{args.model}" not supported')
+    debug('Building model')
+    if args.dataset_type == 'regression':
+        if args.model == 'random_forest':
+            model = RandomForestRegressor(n_estimators=args.num_trees, n_jobs=-1)
+        elif args.model == 'svm':
+            model = SVR()
         else:
-            raise ValueError(f'Dataset type "{args.dataset_type}" not supported')
+            raise ValueError(f'Model type "{args.model}" not supported')
+    elif args.dataset_type == 'classification':
+        if args.model == 'random_forest':
+            model = RandomForestClassifier(n_estimators=args.num_trees, n_jobs=-1, class_weight=args.class_weight)
+        elif args.model == 'svm':
+            model = SVC()
+        else:
+            raise ValueError(f'Model type "{args.model}" not supported')
+    else:
+        raise ValueError(f'Dataset type "{args.dataset_type}" not supported')
 
     debug('Training')
     if args.single_task:
