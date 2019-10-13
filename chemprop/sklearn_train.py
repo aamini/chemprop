@@ -70,7 +70,8 @@ def multi_task_sklearn(model,
     model.fit(train_data.features(), train_targets)
 
     # Save model
-    pickle.dump(model, os.path.join(args.save_dir, 'model.pkl'))
+    with open(os.path.join(args.save_dir, 'model.pkl'), 'wb') as f:
+        pickle.dump(model, f)
 
     test_preds = model.predict(test_data.features())
     if num_tasks == 1:
@@ -101,6 +102,9 @@ def run_sklearn(args: Namespace, logger: Logger = None) -> List[float]:
     debug('Loading data')
     data = get_data(path=args.data_path)
 
+    if args.model == 'svm' and data.num_tasks() != 1:
+        raise ValueError(f'SVM can only handle single-task data but found {data.num_tasks()} tasks')
+
     debug(f'Splitting data with seed {args.seed}')
     # Need to have val set so that train and test sets are the same as when doing MPN
     train_data, _, test_data = split_data(data=data, split_type=args.split_type, seed=args.seed, args=args)
@@ -130,6 +134,8 @@ def run_sklearn(args: Namespace, logger: Logger = None) -> List[float]:
             raise ValueError(f'Model type "{args.model}" not supported')
     else:
         raise ValueError(f'Dataset type "{args.dataset_type}" not supported')
+
+    debug(model)
 
     debug('Training')
     if args.single_task:
