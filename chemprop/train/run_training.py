@@ -134,15 +134,20 @@ def run_training(args: Namespace, logger: Logger = None) -> List[float]:
 
     # Set up test set evaluation
     test_smiles, test_targets = test_data.smiles(), test_data.targets()
-    sum_test_preds = np.zeros((len(test_smiles), args.num_tasks))
+    if args.dataset_type == 'multiclass':
+        sum_test_preds = np.zeros((len(test_smiles), args.num_tasks, args.multiclass_num_classes))
+    else:
+        sum_test_preds = np.zeros((len(test_smiles), args.num_tasks))
 
     # Train ensemble of models
     for model_idx in range(args.ensemble_size):
         # Tensorboard writer
         save_dir = os.path.join(args.save_dir, f'model_{model_idx}')
         makedirs(save_dir)
-        writer = SummaryWriter(log_dir=save_dir)
-
+        try:
+            writer = SummaryWriter(log_dir=save_dir)
+        except:
+            writer = SummaryWriter(logdir=save_dir)
         # Load/build model
         if args.checkpoint_paths is not None:
             debug(f'Loading model {model_idx} from {args.checkpoint_paths[model_idx]}')

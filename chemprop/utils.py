@@ -5,7 +5,7 @@ from typing import Callable, List, Tuple, Union
 from argparse import Namespace
 
 from sklearn.metrics import auc, mean_absolute_error, mean_squared_error, precision_recall_curve, r2_score,\
-    roc_auc_score, accuracy_score
+    roc_auc_score, accuracy_score, log_loss
 import torch
 import torch.nn as nn
 from torch.optim import Adam, Optimizer
@@ -164,6 +164,9 @@ def get_loss_func(args: Namespace) -> nn.Module:
 
     if args.dataset_type == 'regression':
         return nn.MSELoss(reduction='none')
+    
+    if args.dataset_type == 'multiclass':
+        return nn.CrossEntropyLoss(reduction='none')
 
     raise ValueError(f'Dataset type "{args.dataset_type}" not supported.')
 
@@ -191,16 +194,31 @@ def rmse(targets: List[float], preds: List[float]) -> float:
     return math.sqrt(mean_squared_error(targets, preds))
 
 
+def mse(targets: List[float], preds: List[float]) -> float:
+    """
+    Computes the mean squared error.
+
+    :param targets: A list of targets.
+    :param preds: A list of predictions.
+    :return: The computed mse.
+    """
+    return mean_squared_error(targets, preds)
+
+
 def accuracy(targets: List[int], preds: List[float], threshold: float = 0.5) -> float:
     """
     Computes the accuracy of a binary prediction task using a given threshold for generating hard predictions.
+    Alternatively, compute accuracy for a multiclass prediction task by picking the largest probability. 
 
     :param targets: A list of binary targets.
     :param preds: A list of prediction probabilities.
     :param threshold: The threshold above which a prediction is a 1 and below which (inclusive) a prediction is a 0
     :return: The computed accuracy.
     """
-    hard_preds = [1 if p > threshold else 0 for p in preds]
+    if type(preds[0]) == list: # multiclass
+        hard_preds = [p.index(max(p)) for p in preds]
+    else:
+        hard_preds = [1 if p > threshold else 0 for p in preds] # binary prediction
     return accuracy_score(targets, hard_preds)
 
 
@@ -219,6 +237,9 @@ def get_metric_func(metric: str) -> Callable[[Union[List[int], List[float]], Lis
 
     if metric == 'rmse':
         return rmse
+    
+    if metric =='mse':
+        return mse
 
     if metric == 'mae':
         return mean_absolute_error
@@ -228,6 +249,9 @@ def get_metric_func(metric: str) -> Callable[[Union[List[int], List[float]], Lis
     
     if metric == 'accuracy':
         return accuracy
+    
+    if metric == 'cross_entropy':
+        return log_loss
 
     raise ValueError(f'Metric "{metric}" not supported.')
 

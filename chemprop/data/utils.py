@@ -4,6 +4,7 @@ from logging import Logger
 import pickle
 import random
 from typing import List, Set, Tuple
+import os
 
 from rdkit import Chem
 import numpy as np
@@ -215,8 +216,29 @@ def split_data(data: MoleculeDataset,
             args.folds_file, args.val_fold_index, args.test_fold_index
     else:
         folds_file = val_fold_index = test_fold_index = None
+    
+    if split_type == 'crossval':
+        index_set = args.crossval_index_sets[args.seed]
+        data_split = []
+        for split in range(3):
+            split_indices = []
+            for index in index_set[split]:
+                with open(os.path.join(args.crossval_index_dir, f'{index}.pkl'), 'rb') as rf:
+                    split_indices.extend(pickle.load(rf))
+            data_split.append([data[i] for i in split_indices])
+        train, val, test = tuple(data_split)
+        return MoleculeDataset(train), MoleculeDataset(val), MoleculeDataset(test)
+    
+    elif split_type == 'index_predetermined':
+        split_indices = args.crossval_index_sets[args.seed]
+        assert len(split_indices) == 3
+        data_split = []
+        for split in range(3):
+            data_split.append([data[i] for i in split_indices[split]])
+        train, val, test = tuple(data_split)
+        return MoleculeDataset(train), MoleculeDataset(val), MoleculeDataset(test)
 
-    if split_type == 'predetermined':
+    elif split_type == 'predetermined':
         if not val_fold_index:
             assert sizes[2] == 0  # test set is created separately so use all of the other data for train and val
         assert folds_file is not None
@@ -228,7 +250,7 @@ def split_data(data: MoleculeDataset,
         except UnicodeDecodeError:
             with open(folds_file, 'rb') as f:
                 all_fold_indices = pickle.load(f, encoding='latin1')  # in case we're loading indices from python2
-        assert len(data) == sum([len(fold_indices) for fold_indices in all_fold_indices])
+        # assert len(data) == sum([len(fold_indices) for fold_indices in all_fold_indices])
 
         log_scaffold_stats(data, all_fold_indices, logger=logger)
 
