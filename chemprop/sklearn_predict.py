@@ -10,8 +10,6 @@ from chemprop.utils import makedirs
 
 
 def predict_sklearn(args: Namespace):
-    assert args.checkpoint_paths is not None and len(args.checkpoint_paths) == 1
-
     print('Loading data')
     data = get_data(path=args.test_path)
 
@@ -21,7 +19,8 @@ def predict_sklearn(args: Namespace):
         datapoint.set_features(morgan_fingerprint(mol=datapoint.smiles, radius=args.radius, num_bits=args.num_bits))
 
     print('Loading model')
-    model = pickle.load(args.checkpoint_paths[0])
+    with open(args.checkpoint_path, 'rb') as f:
+        model = pickle.load(f)
 
     print('Predicting')
     preds = model.predict(data.features())
