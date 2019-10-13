@@ -34,13 +34,6 @@ def single_task_sklearn(model,
                                             for features, targets in zip(test_data.features(), test_data.targets())
                                             if targets[task_num] is not None])
 
-        if args.dataset_type == 'regression':
-            model = RandomForestRegressor(n_estimators=args.num_trees, n_jobs=-1)
-        elif args.dataset_type == 'classification':
-            model = RandomForestClassifier(class_weight=args.class_weight, n_estimators=args.num_trees, n_jobs=-1)
-        else:
-            raise ValueError(f'dataset_type "{args.dataset_type}" not supported.')
-
         model.fit(train_features, train_targets)
 
         test_preds = model.predict(test_features)
@@ -68,13 +61,6 @@ def multi_task_sklearn(model,
                        args: Namespace,
                        logger: Logger = None) -> List[float]:
     num_tasks = train_data.num_tasks()
-
-    if args.dataset_type == 'regression':
-        model = RandomForestRegressor(n_estimators=args.num_trees, n_jobs=-1)
-    elif args.dataset_type == 'classification':
-        model = RandomForestClassifier(n_estimators=args.num_trees, n_jobs=-1)
-    else:
-        raise ValueError(f'dataset_type "{args.dataset_type}" not supported.')
 
     train_targets = train_data.targets()
     if train_data.num_tasks() == 1:
