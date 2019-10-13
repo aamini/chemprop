@@ -13,6 +13,9 @@ def predict_sklearn(args: Namespace):
     print('Loading data')
     data = get_data(path=args.test_path)
 
+    if data.num_tasks() != 1:
+        raise ValueError(f'Currently only one task is supported but found {data.num_tasks()}')
+
     print('Computing morgan fingerprints')
     morgan_fingerprint = get_features_generator('morgan')
     for datapoint in tqdm(data, total=len(data)):
@@ -23,7 +26,9 @@ def predict_sklearn(args: Namespace):
         model = pickle.load(f)
 
     print('Predicting')
-    preds = model.predict(data.features())
+    # preds = model.predict_proba(data.features())
+    preds = model.decision_function(data.features())
+    import pdb; pdb.set_trace()
 
     if data.num_tasks() == 1:
         preds = [[pred] for pred in preds]

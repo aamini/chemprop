@@ -17,6 +17,28 @@ from chemprop.train.evaluate import evaluate_predictions
 from chemprop.utils import get_metric_func
 
 
+def predict(model,
+            model_type: str,
+            features: List[np.ndarray]) -> List[List[float]]:
+    if model_type == 'random_forest':
+        preds = model.predict_proba(features)
+
+        if type(preds) == list:
+            # Multiple tasks
+            num_tasks, num_preds = len(preds), len(preds[0])
+            preds = [[preds[i][j, 1] for i in range(num_tasks)] for j in range(num_preds)]
+        else:
+            # One task
+            preds = [[preds[i, 1]] for i in range(len(preds))]
+    elif model_type == 'svm':
+        preds = model.decision_function(features)
+        preds = [[pred] for pred in preds]
+    else:
+        raise ValueError(f'Model type "{model_type}" not supported')
+
+    return preds
+
+
 def single_task_sklearn(model,
                         train_data: MoleculeDataset,
                         test_data: MoleculeDataset,
@@ -36,9 +58,11 @@ def single_task_sklearn(model,
 
         model.fit(train_features, train_targets)
 
-        test_preds = model.predict(test_features)
-
-        test_preds = [[pred] for pred in test_preds]
+        test_preds = predict(
+            model=model,
+            model_type=args.model,
+            features=test_features
+        )
         test_targets = [[target] for target in test_targets]
 
         score = evaluate_predictions(
@@ -73,9 +97,11 @@ def multi_task_sklearn(model,
     with open(os.path.join(args.save_dir, 'model.pkl'), 'wb') as f:
         pickle.dump(model, f)
 
-    test_preds = model.predict(test_data.features())
-    if num_tasks == 1:
-        test_preds = [[pred] for pred in test_preds]
+    test_preds = predict(
+        model=model,
+        model_type=args.model,
+        features=test_data.features()
+    )
 
     scores = evaluate_predictions(
         preds=test_preds,
