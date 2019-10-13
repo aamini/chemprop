@@ -30,6 +30,7 @@ def predict_sklearn(args: Namespace):
     preds = predict(
         model=model,
         model_type=args.model_type,
+        dataset_type=args.dataset_type,
         features=data.features()
     )
 

@@ -9,6 +9,8 @@ if __name__ == '__main__':
                         help='Path to CSV file containing testing data for which predictions will be made')
     parser.add_argument('--preds_path', type=str, required=True,
                         help='Path to CSV file where predictions will be saved')
+    parser.add_argument('--dataset_type', type=str, required=True, choices=['classification', 'regression'],
+                        help='Type of dataset')
     parser.add_argument('--model_type', type=str, choices=['random_forest', 'svm'], required=True,
                         help='scikit-learn model to use')
     parser.add_argument('--checkpoint_path', type=str, required=True,

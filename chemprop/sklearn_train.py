@@ -19,22 +19,31 @@ from chemprop.utils import get_metric_func
 
 def predict(model,
             model_type: str,
+            dataset_type: str,
             features: List[np.ndarray]) -> List[List[float]]:
-    if model_type == 'random_forest':
-        preds = model.predict_proba(features)
+    if dataset_type == 'regression':
+        preds = model.predict(features)
 
-        if type(preds) == list:
-            # Multiple tasks
-            num_tasks, num_preds = len(preds), len(preds[0])
-            preds = [[preds[i][j, 1] for i in range(num_tasks)] for j in range(num_preds)]
+        if len(preds.shape) == 1:
+            preds = [[pred] for pred in preds]
+    elif dataset_type == 'classification':
+        if model_type == 'random_forest':
+            preds = model.predict_proba(features)
+
+            if type(preds) == list:
+                # Multiple tasks
+                num_tasks, num_preds = len(preds), len(preds[0])
+                preds = [[preds[i][j, 1] for i in range(num_tasks)] for j in range(num_preds)]
+            else:
+                # One task
+                preds = [[preds[i, 1]] for i in range(len(preds))]
+        elif model_type == 'svm':
+            preds = model.decision_function(features)
+            preds = [[pred] for pred in preds]
         else:
-            # One task
-            preds = [[preds[i, 1]] for i in range(len(preds))]
-    elif model_type == 'svm':
-        preds = model.decision_function(features)
-        preds = [[pred] for pred in preds]
+            raise ValueError(f'Model type "{model_type}" not supported')
     else:
-        raise ValueError(f'Model type "{model_type}" not supported')
+        raise ValueError(f'Dataset type "{dataset_type}" not supported')
 
     return preds
 
@@ -61,6 +70,7 @@ def single_task_sklearn(model,
         test_preds = predict(
             model=model,
             model_type=args.model_type,
+            dataset_type=args.dataset_type,
             features=test_features
         )
         test_targets = [[target] for target in test_targets]
@@ -100,6 +110,7 @@ def multi_task_sklearn(model,
     test_preds = predict(
         model=model,
         model_type=args.model_type,
+        dataset_type=args.dataset_type,
         features=test_data.features()
     )
 
