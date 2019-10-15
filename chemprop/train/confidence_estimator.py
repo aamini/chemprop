@@ -1,6 +1,7 @@
 import numpy as np
 import GPy
 import forestci as fci
+import heapq
 from argparse import Namespace
 from sklearn.ensemble import RandomForestClassifier, RandomForestRegressor
 from rdkit import Chem, DataStructs
@@ -200,7 +201,7 @@ class TanimotoEstimator(ConfidenceEstimator):
         train_smiles_sfp = [morgan_fingerprint(s) for s in train_smiles]
         for i in range(len(test_smiles)):
             confidence[i, :] = np.ones((self.args.num_tasks)) * tanimoto(
-                test_smiles[i], train_smiles_sfp, lambda x: max(x)) * (-1)
+                test_smiles[i], train_smiles_sfp, lambda x: sum(heapq.nlargest(5, x))/5) * (-1)
 
         return test_predictions, confidence
 
@@ -245,10 +246,12 @@ def tanimoto(smile, train_smiles_sfp, operation):
     smiles = Chem.MolToSmiles(Chem.MolFromSmiles(smile))
     fp = morgan_fingerprint(smiles)
     morgan_sim = []
+
     for sfp in train_smiles_sfp:
         tsim = np.dot(fp, sfp) / (fp.sum() +
                                   sfp.sum() - np.dot(fp, sfp))
         morgan_sim.append(tsim)
+
     return operation(morgan_sim)
 
 
