@@ -144,7 +144,13 @@ def run_sklearn(args: Namespace, logger: Logger = None) -> List[float]:
 
     debug(f'Splitting data with seed {args.seed}')
     # Need to have val set so that train and test sets are the same as when doing MPN
-    train_data, _, test_data = split_data(data=data, split_type=args.split_type, seed=args.seed, args=args)
+    train_data, _, test_data = split_data(
+        data=data,
+        split_type=args.split_type,
+        seed=args.seed,
+        sizes=args.split_sizes,
+        args=args
+    )
 
     debug(f'Total size = {len(data):,} | train size = {len(train_data):,} | test size = {len(test_data):,}')
 
