@@ -14,7 +14,7 @@ from chemprop.data import MoleculeDataset
 from chemprop.data.utils import get_data, split_data
 from chemprop.features import get_features_generator
 from chemprop.train.evaluate import evaluate_predictions
-from chemprop.utils import get_metric_func
+from chemprop.utils import get_metric_func, makedirs
 
 
 def predict(model,
@@ -208,12 +208,15 @@ def run_sklearn(args: Namespace, logger: Logger = None) -> List[float]:
 def cross_validate_sklearn(args: Namespace, logger: Logger = None) -> Tuple[float, float]:
     info = logger.info if logger is not None else print
     init_seed = args.seed
+    save_dir = args.save_dir
 
     # Run training on different random seeds for each fold
     all_scores = []
     for fold_num in range(args.num_folds):
         info(f'Fold {fold_num}')
         args.seed = init_seed + fold_num
+        args.save_dir = os.path.join(save_dir, f'fold_{fold_num}')
+        makedirs(args.save_dir)
         model_scores = run_sklearn(args, logger)
         all_scores.append(model_scores)
     all_scores = np.array(all_scores)
