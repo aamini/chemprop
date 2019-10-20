@@ -98,15 +98,12 @@ class NNEstimator(ConfidenceEstimator):
             self.sum_test_confidence += np.array(test_confidence)
 
     def compute_confidence(self, test_predictions):
-        # print(test_predictions, np.sqrt(self.sum_test_confidence / self.args.ensemble_size))
-        # print("HI")
         return test_predictions, np.sqrt(self.sum_test_confidence / self.args.ensemble_size)
 
 
 class GaussianProcessEstimator(DroppingEstimator):
     def compute_confidence(self, test_predictions):
         avg_last_hidden, avg_last_hidden_test, transformed_val = self._compute_hidden_vals()
-        super().compute_confidence(test_predictions)
 
         predictions = np.ndarray(
             shape=(len(self.test_data.smiles()), self.args.num_tasks))
@@ -122,16 +119,6 @@ class GaussianProcessEstimator(DroppingEstimator):
 
             avg_test_preds, avg_test_var = gaussian.predict(
                 avg_last_hidden_test)
-
-            # # Scale Data
-            # domain = np.max(avg_test_var) - np.min(avg_test_var)
-            # # Shift.
-            # avg_test_var = avg_test_var - np.min(avg_test_var)
-            # # Scale domain to 1.
-            # avg_test_var = avg_test_var / domain
-            # # Apply log scale and flip.
-            # avg_test_var = np.maximum(
-            #     0, -np.log(avg_test_var + np.exp(-10)))
 
             predictions[:, task:task + 1] = avg_test_preds
             confidence[:, task:task + 1] = np.sqrt(avg_test_var)
