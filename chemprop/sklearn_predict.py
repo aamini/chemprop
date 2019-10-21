@@ -15,16 +15,13 @@ def predict_sklearn(args: Namespace):
     print('Loading data')
     data = get_data(path=args.test_path)
 
-    if data.num_tasks() != 1:
-        raise ValueError(f'Currently only one task is supported but found {data.num_tasks()}')
-
     print('Computing morgan fingerprints')
     morgan_fingerprint = get_features_generator('morgan')
     for datapoint in tqdm(data, total=len(data)):
         datapoint.set_features(morgan_fingerprint(mol=datapoint.smiles, radius=args.radius, num_bits=args.num_bits))
 
     print(f'Predicting with an ensemble of {len(args.checkpoint_paths)} models')
-    sum_preds = np.zeros((len(data), data.num_tasks()))
+    sum_preds = np.zeros((len(data), args.num_tasks))
 
     for checkpoint_path in tqdm(args.checkpoint_paths, total=len(args.checkpoint_paths)):
         with open(checkpoint_path, 'rb') as f:

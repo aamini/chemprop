@@ -22,6 +22,8 @@ if __name__ == '__main__':
                         help='Morgan fingerprint radius')
     parser.add_argument('--num_bits', type=int, default=2048,
                         help='Number of bits in morgan fingerprint')
+    parser.add_argument('--num_tasks', type=int, required=True,
+                        help='Number of tasks the trained model makes predictions for')
     args = parser.parse_args()
 
     update_checkpoint_args(args, ext='pkl')
