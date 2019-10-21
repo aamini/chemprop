@@ -1,5 +1,6 @@
 from argparse import ArgumentParser
 
+from chemprop.parsing import update_checkpoint_args
 from chemprop.sklearn_predict import predict_sklearn
 
 
@@ -13,12 +14,16 @@ if __name__ == '__main__':
                         help='Type of dataset')
     parser.add_argument('--model_type', type=str, choices=['random_forest', 'svm'], required=True,
                         help='scikit-learn model to use')
-    parser.add_argument('--checkpoint_path', type=str, required=True,
+    parser.add_argument('--checkpoint_path', type=str, default=None,
                         help='Path to model checkpoint (.pkl file)')
+    parser.add_argument('--checkpoint_dir', type=str, default=None,
+                        help='Path to directory containing model checkpoints (.pkl file)')
     parser.add_argument('--radius', type=int, default=2,
                         help='Morgan fingerprint radius')
     parser.add_argument('--num_bits', type=int, default=2048,
                         help='Number of bits in morgan fingerprint')
     args = parser.parse_args()
+
+    update_checkpoint_args(args, ext='pkl')
 
     predict_sklearn(args)

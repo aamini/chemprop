@@ -177,11 +177,12 @@ def add_train_args(parser: ArgumentParser):
                         help='Use messages on atoms instead of messages on bonds')
 
 
-def update_checkpoint_args(args: Namespace):
+def update_checkpoint_args(args: Namespace, ext: str = 'pt'):
     """
     Walks the checkpoint directory to find all checkpoints, updating args.checkpoint_paths and args.ensemble_size.
 
     :param args: Arguments.
+    :param ext: File extension for checkpoints.
     """
     if hasattr(args, 'checkpoint_paths') and args.checkpoint_paths is not None:
         return
@@ -197,7 +198,7 @@ def update_checkpoint_args(args: Namespace):
 
     for root, _, files in os.walk(args.checkpoint_dir):
         for fname in files:
-            if fname.endswith('.pt'):
+            if fname.endswith(f'.{ext}'):
                 args.checkpoint_paths.append(os.path.join(root, fname))
 
     args.ensemble_size = len(args.checkpoint_paths)
