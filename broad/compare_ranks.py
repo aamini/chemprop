@@ -2,6 +2,8 @@ from argparse import ArgumentParser, Namespace
 import csv
 import os
 
+from scipy.stats import spearmanr
+
 
 su3327_smiles = 'Nc1nnc(Sc2ncc(s2)[N+]([O-])=O)s1'
 
@@ -16,15 +18,21 @@ def compare_ranks(args: Namespace):
     with open(args.test_path) as f:
         test_data = list(csv.reader(f))[1:]
 
-    reference_smiles = [smiles
-                        for smiles, pred in sorted(reference_data, key=lambda row: float(row[1]), reverse=True)
-                        if smiles in keep_smiles]
-    test_smiles = [smiles
-                   for smiles, pred in sorted(test_data, key=lambda row: float(row[1]), reverse=True)
-                   if smiles in keep_smiles]
+    reference_data = [row for row in reference_data if row[0] in keep_smiles]
+    test_data = [row for row in test_data if row[0] in keep_smiles]
 
-    print(f'Rank of su3327 in {os.path.basename(args.reference_path)} = {reference_smiles.index(su3327_smiles)}')
-    print(f'Rank of su3327 in {os.path.basename(args.test_path)} = {test_smiles.index(su3327_smiles)}')
+    reference_smiles, reference_preds = zip(*reference_data)
+    test_smiles, test_preds = zip(*test_data)
+
+    assert reference_smiles == test_smiles
+
+    print(f'Rank correlation = {spearmanr(reference_preds, test_preds)}')
+
+    reference_smiles_sorted = [smiles for smiles, pred in sorted(reference_data, key=lambda row: float(row[1]), reverse=True)]
+    test_smiles_sorted = [smiles for smiles, pred in sorted(test_data, key=lambda row: float(row[1]), reverse=True)]
+
+    print(f'Rank of su3327 in {os.path.basename(args.reference_path)} = {reference_smiles_sorted.index(su3327_smiles) + 1}')
+    print(f'Rank of su3327 in {os.path.basename(args.test_path)} = {test_smiles_sorted.index(su3327_smiles) + 1}')
 
 
 if __name__ == '__main__':
