@@ -79,6 +79,8 @@ def run_training(args: Namespace, logger: Logger = None) -> List[float]:
     else:
         train_data, val_data, test_data = split_data(
             data=data, split_type=args.split_type, sizes=args.split_sizes, seed=args.seed, args=args, logger=logger)
+    
+    # test_data = train_data
 
     if args.dataset_type == 'classification':
         class_sizes = get_class_sizes(data)
@@ -279,7 +281,7 @@ def run_training(args: Namespace, logger: Logger = None) -> List[float]:
 
     # Evaluate ensemble on test set
     avg_test_preds = (sum_test_preds / args.ensemble_size)
-
+    print(avg_test_preds.tolist(), test_targets)
     ensemble_scores = evaluate_predictions(
         preds=avg_test_preds.tolist(),
         targets=test_targets,
