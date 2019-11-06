@@ -187,7 +187,6 @@ class LatentSpaceEstimator(DroppingEstimator):
         return test_predictions, confidence
 
 
-
 class EnsembleEstimator(ConfidenceEstimator):
     def __init__(self, train_data, val_data, test_data, scaler, args):
         super().__init__(train_data, val_data, test_data, scaler, args)
