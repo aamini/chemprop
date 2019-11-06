@@ -61,7 +61,7 @@ class DroppingEstimator(ConfidenceEstimator):
             scaler=None
         )
 
-        self.sum_last_hidden += np.array(last_hidden_train)
+        self.sum_last_hidden_train += np.array(last_hidden_train)
 
         last_hidden_val = predict(
             model=model,
@@ -70,7 +70,7 @@ class DroppingEstimator(ConfidenceEstimator):
             scaler=None
         )
 
-        self.sum_last_hidden += np.array(last_hidden_val)
+        self.sum_last_hidden_val += np.array(last_hidden_val)
 
         last_hidden_test = predict(
             model=model,
@@ -106,7 +106,7 @@ class NNEstimator(ConfidenceEstimator):
         )
 
         if len(test_preds) != 0:
-            self.sum_test_confidence += np.array(test_confidence)
+            self.sum_test_confidence += np.array(test_confidence).clip(min=0)
 
     def compute_confidence(self, test_predictions):
         return test_predictions, np.sqrt(self.sum_test_confidence / self.args.ensemble_size)
@@ -174,15 +174,15 @@ class LatentSpaceEstimator(DroppingEstimator):
     def compute_confidence(self, test_predictions):
         avg_last_hidden_train, _, avg_last_hidden_test = self._compute_hidden_vals()
 
-        confidence = np.ndarray(
-            shape=(len(self.test_data.smiles()), self.args.num_tasks))
+        confidence = np.zeros((len(self.test_data.smiles()), self.args.num_tasks))
 
         for test_input in range(len(avg_last_hidden_test)):
-            distances = np.array(len(avg_last_hidden_train))
+            distances = np.zeros(len(avg_last_hidden_train))
             for train_input in range(len(avg_last_hidden_train)):
                 difference = avg_last_hidden_test[test_input] - avg_last_hidden_train[train_input]
                 distances[train_input] = np.sqrt(np.sum(difference * difference))
-            confidence[test_input, :] = np.min(distances)
+
+            confidence[test_input, :] = sum(heapq.nsmallest(5, distances))/5
 
         return test_predictions, confidence
 
