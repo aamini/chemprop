@@ -53,8 +53,10 @@ def single_task_sklearn(model,
                         test_data: MoleculeDataset,
                         metric_func: Callable,
                         args: Namespace,
-                        logger: Logger = None) -> List[float]:
+                        logger: Logger = None) -> Tuple[List[float], List[List[float]], List[List[float]]]:
     scores = []
+    preds = [[] for _ in range(len(test_data))]
+    targets = [[] for _ in range(len(test_data))]
     num_tasks = train_data.num_tasks()
     for task_num in trange(num_tasks):
         # Only get features and targets for molecules where target is not None
@@ -75,6 +77,17 @@ def single_task_sklearn(model,
         )
         test_targets = [[target] for target in test_targets]
 
+        index = 0
+        for i, tgt in enumerate(test_data.targets()):
+            if tgt[task_num] is None:
+                preds[i].append(None)
+                targets[i].append(None)
+            else:
+                preds[i].append(test_preds[index])
+                targets[i].append(test_targets[index])
+                index += 1
+        assert index == len(test_preds) == len(test_targets)
+
         score = evaluate_predictions(
             preds=test_preds,
             targets=test_targets,
@@ -85,7 +98,7 @@ def single_task_sklearn(model,
         )
         scores.append(score[0])
 
-    return scores
+    return scores, preds, targets
 
 
 def multi_task_sklearn(model,
@@ -93,7 +106,7 @@ def multi_task_sklearn(model,
                        test_data: MoleculeDataset,
                        metric_func: Callable,
                        args: Namespace,
-                       logger: Logger = None) -> List[float]:
+                       logger: Logger = None) -> Tuple[List[float], List[List[float]], List[List[float]]]:
     num_tasks = train_data.num_tasks()
 
     train_targets = train_data.targets()
@@ -113,20 +126,21 @@ def multi_task_sklearn(model,
         dataset_type=args.dataset_type,
         features=test_data.features()
     )
+    test_targets = test_data.targets()
 
     scores = evaluate_predictions(
         preds=test_preds,
-        targets=test_data.targets(),
+        targets=test_targets,
         num_tasks=num_tasks,
         metric_func=metric_func,
         dataset_type=args.dataset_type,
         logger=logger
     )
 
-    return scores
+    return scores, test_preds, test_targets
 
 
-def run_sklearn(args: Namespace, logger: Logger = None) -> List[float]:
+def run_sklearn(args: Namespace, logger: Logger = None) -> Tuple[List[float], List[List[float]], List[List[float]]]:
     if logger is not None:
         debug, info = logger.debug, logger.info
     else:
@@ -182,7 +196,7 @@ def run_sklearn(args: Namespace, logger: Logger = None) -> List[float]:
 
     debug('Training')
     if args.single_task:
-        scores = single_task_sklearn(
+        scores, preds, targets = single_task_sklearn(
             model=model,
             train_data=train_data,
             test_data=test_data,
@@ -191,7 +205,7 @@ def run_sklearn(args: Namespace, logger: Logger = None) -> List[float]:
             logger=logger
         )
     else:
-        scores = multi_task_sklearn(
+        scores, preds, targets = multi_task_sklearn(
             model=model,
             train_data=train_data,
             test_data=test_data,
@@ -202,7 +216,7 @@ def run_sklearn(args: Namespace, logger: Logger = None) -> List[float]:
 
     info(f'Test {args.metric} = {np.nanmean(scores)}')
 
-    return scores
+    return scores, preds, targets
 
 
 def cross_validate_sklearn(args: Namespace, logger: Logger = None) -> Tuple[float, float]:
@@ -212,14 +226,23 @@ def cross_validate_sklearn(args: Namespace, logger: Logger = None) -> Tuple[floa
 
     # Run training on different random seeds for each fold
     all_scores = []
+    all_preds = []
+    all_targets = []
     for fold_num in range(args.num_folds):
         info(f'Fold {fold_num}')
         args.seed = init_seed + fold_num
         args.save_dir = os.path.join(save_dir, f'fold_{fold_num}')
         makedirs(args.save_dir)
-        model_scores = run_sklearn(args, logger)
+        model_scores, model_preds, model_targets = run_sklearn(args, logger)
         all_scores.append(model_scores)
+        all_preds += model_preds
+        all_targets += model_targets
     all_scores = np.array(all_scores)
+    all_preds = np.array(all_preds)
+    all_targets = np.array(all_targets)
+
+    np.save(os.path.join(args.save_dir, 'preds.npy'), all_preds)
+    np.save(os.path.join(args.save_dir, 'targets.npy'), all_targets)
 
     # Report scores for each fold
     for fold_num, scores in enumerate(all_scores):
