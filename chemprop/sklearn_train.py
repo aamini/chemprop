@@ -83,8 +83,8 @@ def single_task_sklearn(model,
                 preds[i].append(None)
                 targets[i].append(None)
             else:
-                preds[i].append(test_preds[index])
-                targets[i].append(test_targets[index])
+                preds[i].append(test_preds[index][0])
+                targets[i].append(test_targets[index][0])
                 index += 1
         assert index == len(test_preds) == len(test_targets)
 
