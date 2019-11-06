@@ -241,8 +241,8 @@ def cross_validate_sklearn(args: Namespace, logger: Logger = None) -> Tuple[floa
     all_preds = np.array(all_preds)
     all_targets = np.array(all_targets)
 
-    np.save(os.path.join(args.save_dir, 'preds.npy'), all_preds)
-    np.save(os.path.join(args.save_dir, 'targets.npy'), all_targets)
+    np.save(os.path.join(save_dir, 'preds.npy'), all_preds)
+    np.save(os.path.join(save_dir, 'targets.npy'), all_targets)
 
     # Report scores for each fold
     for fold_num, scores in enumerate(all_scores):
