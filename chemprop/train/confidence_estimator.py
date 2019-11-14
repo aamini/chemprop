@@ -209,7 +209,7 @@ class EnsembleEstimator(ConfidenceEstimator):
     def compute_confidence(self, test_predictions):
         confidence = np.sqrt(np.var(self.all_test_preds, axis=2))
 
-        return test_predictions, self._scale_confidence(confidence)
+        return test_predictions, confidence
 
 
 class TanimotoEstimator(ConfidenceEstimator):

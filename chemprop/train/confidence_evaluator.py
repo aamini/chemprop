@@ -148,10 +148,10 @@ class LogLikelihood(EvaluationMethod):
 
         for set_ in data["sets_by_confidence"]:
             # Encourage small standard deviations.
-            log_likelihood -= np.log(2 * np.pi * set_["confidence"]**2) / 2
+            log_likelihood -= np.log(2 * np.pi * max(0.01, set_["confidence"]**2)) / 2
 
             # Penalize for large error.
-            log_likelihood -= set_["error"]**2/(2 * set_["confidence"]**2)
+            log_likelihood -= set_["error"]**2/(2 * max(0.01, set_["confidence"]**2))
 
         return {"log_likelihood": log_likelihood}
 
@@ -247,6 +247,23 @@ class ConfidenceEvaluator:
                     method.visualize(task, data)
 
         f.close()
+
+    @staticmethod
+    def evaluate(file_path, methods):
+        f = open(file_path)
+        log = json.load(f)
+
+        all_evaluations = {}
+        for task, data in log.items():
+            task_evaluations = {}
+            for method in ConfidenceEvaluator.methods:
+                if method.name in methods:
+                    task_evaluations[method.name] = method.evaluate(data)
+            all_evaluations[task] = task_evaluations
+
+        f.close()
+
+        return all_evaluations
 
 
 # OUTDATED VISUALIZATIONS
