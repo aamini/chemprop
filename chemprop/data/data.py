@@ -165,6 +165,16 @@ class MoleculeDataset(Dataset):
         """
         return len(self.data[0].features) if len(self.data) > 0 and self.data[0].features is not None else None
 
+
+    def sample(self, sample_size: int):
+        """
+        Samples a random subset of theh  dataset.
+
+        :param sample_size: The size of the sample to produce. 
+        """
+        self.data = random.sample(self.data, sample_size)
+
+
     def shuffle(self, seed: int = None):
         """
         Shuffles the dataset.

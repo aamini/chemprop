@@ -1,4 +1,5 @@
 from argparse import Namespace
+from copy import deepcopy
 import logging
 from typing import Callable, List, Union
 
@@ -40,7 +41,12 @@ def train(model: nn.Module,
     
     model.train()
     
+    data = deepcopy(data)
+
     data.shuffle()
+
+    if args.confidence == 'bootstrap':
+        data.sample(int(1.5 * len(data) / args.ensemble_size))
 
     loss_sum, iter_count = 0, 0
 

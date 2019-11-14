@@ -6,6 +6,7 @@ import json
 from logging import Logger
 import os
 from pprint import pformat
+from random import sample
 from typing import List, Tuple, Union
 
 import forestci as fci
@@ -194,9 +195,15 @@ def run_training(args: Namespace, logger: Logger = None) -> List[float]:
         for epoch in trange(args.epochs):
             debug(f'Epoch {epoch}')
 
+            train_data_sample = train_data
+
+            # if args.confidence == 'bootstrap':
+            #     print(train_data)
+            #     train_data_sample = sample(train_data, int(args.train_data_size * (1.5 / args.ensemble_size)))
+
             n_iter = train(
                 model=model,
-                data=train_data,
+                data=train_data_sample,
                 loss_func=loss_func,
                 optimizer=optimizer,
                 scheduler=scheduler,
@@ -283,7 +290,6 @@ def run_training(args: Namespace, logger: Logger = None) -> List[float]:
     # Evaluate ensemble on test set
     avg_test_preds = (sum_test_preds / args.ensemble_size)
 
-    print(avg_test_preds.tolist(), test_targets)
     ensemble_scores = evaluate_predictions(
         preds=avg_test_preds.tolist(),
         targets=test_targets,

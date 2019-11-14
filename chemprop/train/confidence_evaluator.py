@@ -169,7 +169,7 @@ class Boxplot(EvaluationMethod):
         min_confidence = data["sets_by_confidence"][-1]["confidence"]
         max_confidence = data["sets_by_confidence"][0]["confidence"]
         confidence_range = max_confidence - min_confidence
-        print(max_confidence, min_confidence, confidence_range)
+
         for pair in data["sets_by_confidence"]:
             errors_by_confidence[min(
                 int((pair["confidence"] - min_confidence)//(confidence_range / 10)),

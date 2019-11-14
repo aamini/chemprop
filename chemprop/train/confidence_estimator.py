@@ -1,11 +1,15 @@
+import random
 import numpy as np
 import GPy
 import forestci as fci
 import heapq
 from argparse import Namespace
 from sklearn.ensemble import RandomForestClassifier, RandomForestRegressor
+from scipy.optimize import minimize
 from rdkit import Chem, DataStructs
 from rdkit.Chem import AllChem
+
+from chemprop.utils import negative_log_likelihood
 
 
 def confidence_estimator_builder(confidence_method: str):
@@ -15,7 +19,8 @@ def confidence_estimator_builder(confidence_method: str):
         'random_forest': RandomForestEstimator,
         'tanimoto': TanimotoEstimator,
         'ensemble': EnsembleEstimator,
-        'latent_space': LatentSpaceEstimator
+        'latent_space': LatentSpaceEstimator,
+        'bootstrap': BootstrapEstimator
     }[confidence_method]
 
 
@@ -31,7 +36,35 @@ class ConfidenceEstimator:
         pass
 
     def compute_confidence(self, test_predictions):
+        test_predictions, test_confidence = self._compute_confidence(test_predictions)
+
+        if self.args.calibrate_confidence:
+            sigma_1, sigma_2 = self._calibrate_confidence(test_predictions, test_confidence)
+            return test_predictions, np.sqrt(sigma_1**2 + sigma_2**2 * test_confidence**2)
+
+        return test_predictions, test_confidence
+
+
+    def _compute_confidence(self, test_predictions):
         pass
+
+    def _calibrate_confidence(self, predictions, confidence):
+        def objective_function(beta, confidence, errors):
+            pred_vars = np.clip(beta[0]**2 + confidence**2 * beta[1]**2, 0.001, None)
+            costs = np.log(pred_vars) / 2 + errors**2 / (2 * pred_vars)
+
+            return(np.sum(costs))
+        
+        errors = predictions - self.test_data.targets()
+        sample = random.sample(list(range(len(confidence))), 30)
+        sample_confidence = confidence[sample, :]
+        sample_errors = errors[sample, :]
+
+        beta_init = np.array([0, 1])
+        result = minimize(objective_function, beta_init, args=(sample_confidence, sample_errors),
+                        method='BFGS', options={'maxiter': 500})
+
+        return np.abs(result.x)
 
     def _scale_confidence(self, confidence):
         return self.scaler.stds * confidence
@@ -108,12 +141,12 @@ class NNEstimator(ConfidenceEstimator):
         if len(test_preds) != 0:
             self.sum_test_confidence += np.array(test_confidence).clip(min=0)
 
-    def compute_confidence(self, test_predictions):
+    def _compute_confidence(self, test_predictions):
         return test_predictions, np.sqrt(self.sum_test_confidence / self.args.ensemble_size)
 
 
 class GaussianProcessEstimator(DroppingEstimator):
-    def compute_confidence(self, test_predictions):
+    def _compute_confidence(self, test_predictions):
         _, avg_last_hidden_val, avg_last_hidden_test = self._compute_hidden_vals()
 
         predictions = np.ndarray(
@@ -142,7 +175,7 @@ class GaussianProcessEstimator(DroppingEstimator):
 
 
 class RandomForestEstimator(DroppingEstimator):
-    def compute_confidence(self, test_predictions):
+    def _compute_confidence(self, test_predictions):
         _, avg_last_hidden_val, avg_last_hidden_test = self._compute_hidden_vals()
 
         predictions = np.ndarray(
@@ -171,7 +204,7 @@ class RandomForestEstimator(DroppingEstimator):
 
 
 class LatentSpaceEstimator(DroppingEstimator):
-    def compute_confidence(self, test_predictions):
+    def _compute_confidence(self, test_predictions):
         avg_last_hidden_train, _, avg_last_hidden_test = self._compute_hidden_vals()
 
         confidence = np.zeros((len(self.test_data.smiles()), self.args.num_tasks))
@@ -206,14 +239,19 @@ class EnsembleEstimator(ConfidenceEstimator):
         else:
             self.all_test_preds = reshaped_test_preds
 
-    def compute_confidence(self, test_predictions):
+    def _compute_confidence(self, test_predictions):
         confidence = np.sqrt(np.var(self.all_test_preds, axis=2))
 
         return test_predictions, confidence
 
 
+class BootstrapEstimator(EnsembleEstimator):
+    def __init__(self, train_data, val_data, test_data, scaler, args):
+        super().__init__(train_data, val_data, test_data, scaler, args)   
+
+
 class TanimotoEstimator(ConfidenceEstimator):
-    def compute_confidence(self, test_predictions):
+    def _compute_confidence(self, test_predictions):
         train_smiles = self.train_data.smiles()
         test_smiles = self.test_data.smiles()
         confidence = np.ndarray(
