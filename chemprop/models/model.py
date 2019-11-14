@@ -116,7 +116,6 @@ def build_model(args: Namespace) -> nn.Module:
 
     is_classifier = args.dataset_type == 'classification'
     if args.confidence == 'nn':
-        print(args.confidence)
         model = MoleculeModel(classification=is_classifier, confidence=True)
     else:
         model = MoleculeModel(classification=is_classifier)

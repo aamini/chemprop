@@ -139,6 +139,26 @@ class Spearman(EvaluationMethod):
         print(task, "-", "Spearman p-value:", evaluation["p"])
 
 
+class LogLikelihood(EvaluationMethod):
+    def __init__(self):
+        self.name = "log_likelihood"
+
+    def evaluate(self, data):
+        log_likelihood = 0
+
+        for set_ in data["sets_by_confidence"]:
+            # Encourage small standard deviations.
+            log_likelihood -= np.log(2 * np.pi * max(0.01, set_["confidence"]**2)) / 2
+
+            # Penalize for large error.
+            log_likelihood -= set_["error"]**2/(2 * max(0.01, set_["confidence"]**2))
+
+        return {"log_likelihood": log_likelihood}
+
+    def _visualize(self, task, evaluation):
+        print(task, "-", "Sum of Log Likelihoods:", evaluation["log_likelihood"])
+
+
 class Boxplot(EvaluationMethod):
     def __init__(self):
         self.name = "boxplot"
@@ -176,7 +196,7 @@ class Boxplot(EvaluationMethod):
 
 
 class ConfidenceEvaluator:
-    methods = [Cutoffs(), AbsScatter(), LogScatter(), Spearman(), Boxplot()]
+    methods = [Cutoffs(), AbsScatter(), LogScatter(), Spearman(), LogLikelihood(), Boxplot()]
 
     @staticmethod
     def save(predictions, targets, confidence, args):
@@ -227,6 +247,23 @@ class ConfidenceEvaluator:
                     method.visualize(task, data)
 
         f.close()
+
+    @staticmethod
+    def evaluate(file_path, methods):
+        f = open(file_path)
+        log = json.load(f)
+
+        all_evaluations = {}
+        for task, data in log.items():
+            task_evaluations = {}
+            for method in ConfidenceEvaluator.methods:
+                if method.name in methods:
+                    task_evaluations[method.name] = method.evaluate(data)
+            all_evaluations[task] = task_evaluations
+
+        f.close()
+
+        return all_evaluations
 
 
 # OUTDATED VISUALIZATIONS

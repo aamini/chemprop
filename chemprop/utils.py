@@ -152,6 +152,11 @@ def load_task_names(path: str) -> List[str]:
     return load_args(path).task_names
 
 
+def negative_log_likelihood(pred_targets, pred_var, targets):
+    clamped_var = torch.clamp(pred_var, min=0.001)
+    return torch.log(clamped_var) / 2 + (pred_targets - targets)**2 / (2 * clamped_var)
+
+
 def get_loss_func(args: Namespace) -> nn.Module:
     """
     Gets the loss function corresponding to a given dataset type.
@@ -163,6 +168,8 @@ def get_loss_func(args: Namespace) -> nn.Module:
         return nn.BCEWithLogitsLoss(reduction='none')
 
     if args.dataset_type == 'regression':
+        if args.confidence == 'nn':
+            return negative_log_likelihood
         return nn.MSELoss(reduction='none')
 
     raise ValueError(f'Dataset type "{args.dataset_type}" not supported.')

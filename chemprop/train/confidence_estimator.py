@@ -14,7 +14,8 @@ def confidence_estimator_builder(confidence_method: str):
         'gaussian': GaussianProcessEstimator,
         'random_forest': RandomForestEstimator,
         'tanimoto': TanimotoEstimator,
-        'ensemble': EnsembleEstimator
+        'ensemble': EnsembleEstimator,
+        'latent_space': LatentSpaceEstimator
     }[confidence_method]
 
 
@@ -40,7 +41,10 @@ class DroppingEstimator(ConfidenceEstimator):
     def __init__(self, train_data, val_data, test_data, scaler, args):
         super().__init__(train_data, val_data, test_data, scaler, args)
 
-        self.sum_last_hidden = np.zeros(
+        self.sum_last_hidden_train = np.zeros(
+            (len(self.train_data.smiles()), self.args.last_hidden_size))
+
+        self.sum_last_hidden_val = np.zeros(
             (len(self.val_data.smiles()), self.args.last_hidden_size))
 
         self.sum_last_hidden_test = np.zeros(
@@ -50,14 +54,23 @@ class DroppingEstimator(ConfidenceEstimator):
         model.eval()
         model.use_last_hidden = False
 
-        last_hidden = predict(
+        last_hidden_train = predict(
+            model=model,
+            data=self.train_data,
+            batch_size=self.args.batch_size,
+            scaler=None
+        )
+
+        self.sum_last_hidden_train += np.array(last_hidden_train)
+
+        last_hidden_val = predict(
             model=model,
             data=self.val_data,
             batch_size=self.args.batch_size,
             scaler=None
         )
 
-        self.sum_last_hidden += np.array(last_hidden)
+        self.sum_last_hidden_val += np.array(last_hidden_val)
 
         last_hidden_test = predict(
             model=model,
@@ -69,13 +82,11 @@ class DroppingEstimator(ConfidenceEstimator):
         self.sum_last_hidden_test += np.array(last_hidden_test)
 
     def _compute_hidden_vals(self):
-        avg_last_hidden = self.sum_last_hidden / self.args.ensemble_size
+        avg_last_hidden_train = self.sum_last_hidden_train / self.args.ensemble_size
+        avg_last_hidden_val = self.sum_last_hidden_val / self.args.ensemble_size
         avg_last_hidden_test = self.sum_last_hidden_test / self.args.ensemble_size
 
-        transformed_val = self.scaler.transform(
-            np.array(self.val_data.targets()))
-
-        return avg_last_hidden, avg_last_hidden_test, transformed_val
+        return avg_last_hidden_train, avg_last_hidden_val, avg_last_hidden_test
 
 
 class NNEstimator(ConfidenceEstimator):
@@ -95,7 +106,7 @@ class NNEstimator(ConfidenceEstimator):
         )
 
         if len(test_preds) != 0:
-            self.sum_test_confidence += np.array(test_confidence)
+            self.sum_test_confidence += np.array(test_confidence).clip(min=0)
 
     def compute_confidence(self, test_predictions):
         return test_predictions, np.sqrt(self.sum_test_confidence / self.args.ensemble_size)
@@ -103,17 +114,20 @@ class NNEstimator(ConfidenceEstimator):
 
 class GaussianProcessEstimator(DroppingEstimator):
     def compute_confidence(self, test_predictions):
-        avg_last_hidden, avg_last_hidden_test, transformed_val = self._compute_hidden_vals()
+        _, avg_last_hidden_val, avg_last_hidden_test = self._compute_hidden_vals()
 
         predictions = np.ndarray(
             shape=(len(self.test_data.smiles()), self.args.num_tasks))
         confidence = np.ndarray(
             shape=(len(self.test_data.smiles()), self.args.num_tasks))
 
+        transformed_val = self.scaler.transform(
+            np.array(self.val_data.targets()))
+
         for task in range(self.args.num_tasks):
             kernel = GPy.kern.Linear(input_dim=self.args.last_hidden_size)
             gaussian = GPy.models.SparseGPRegression(
-                avg_last_hidden,
+                avg_last_hidden_val,
                 transformed_val[:, task:task + 1], kernel)
             gaussian.optimize()
 
@@ -129,28 +143,48 @@ class GaussianProcessEstimator(DroppingEstimator):
 
 class RandomForestEstimator(DroppingEstimator):
     def compute_confidence(self, test_predictions):
-        avg_last_hidden, avg_last_hidden_test, transformed_val = self._compute_hidden_vals()
+        _, avg_last_hidden_val, avg_last_hidden_test = self._compute_hidden_vals()
 
         predictions = np.ndarray(
             shape=(len(self.test_data.smiles()), self.args.num_tasks))
         confidence = np.ndarray(
             shape=(len(self.test_data.smiles()), self.args.num_tasks))
 
+        transformed_val = self.scaler.transform(
+            np.array(self.val_data.targets()))
+
         n_trees = 100
         for task in range(self.args.num_tasks):
             forest = RandomForestRegressor(n_estimators=n_trees)
-            forest.fit(avg_last_hidden, transformed_val[:, task])
+            forest.fit(avg_last_hidden_val, transformed_val[:, task])
 
             avg_test_preds = forest.predict(avg_last_hidden_test)
             predictions[:, task] = avg_test_preds
 
             avg_test_var = fci.random_forest_error(
-                forest, avg_last_hidden, avg_last_hidden_test)
+                forest, avg_last_hidden_val, avg_last_hidden_test)
             confidence[:, task] = np.sqrt(avg_test_var)
 
         predictions = self.scaler.inverse_transform(predictions)
 
         return predictions,  self._scale_confidence(confidence)
+
+
+class LatentSpaceEstimator(DroppingEstimator):
+    def compute_confidence(self, test_predictions):
+        avg_last_hidden_train, _, avg_last_hidden_test = self._compute_hidden_vals()
+
+        confidence = np.zeros((len(self.test_data.smiles()), self.args.num_tasks))
+
+        for test_input in range(len(avg_last_hidden_test)):
+            distances = np.zeros(len(avg_last_hidden_train))
+            for train_input in range(len(avg_last_hidden_train)):
+                difference = avg_last_hidden_test[test_input] - avg_last_hidden_train[train_input]
+                distances[train_input] = np.sqrt(np.sum(difference * difference))
+
+            confidence[test_input, :] = sum(heapq.nsmallest(5, distances))/5
+
+        return test_predictions, confidence
 
 
 class EnsembleEstimator(ConfidenceEstimator):
@@ -175,7 +209,7 @@ class EnsembleEstimator(ConfidenceEstimator):
     def compute_confidence(self, test_predictions):
         confidence = np.sqrt(np.var(self.all_test_preds, axis=2))
 
-        return test_predictions, self._scale_confidence(confidence)
+        return test_predictions, confidence
 
 
 class TanimotoEstimator(ConfidenceEstimator):
