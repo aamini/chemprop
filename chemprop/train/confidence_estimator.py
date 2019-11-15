@@ -40,7 +40,7 @@ class ConfidenceEstimator:
 
         if self.args.calibrate_confidence:
             sigma_1, sigma_2 = self._calibrate_confidence(test_predictions, test_confidence)
-            return test_predictions, np.sqrt(sigma_1**2 + sigma_2**2 * test_confidence**2)
+            return test_predictions, np.sqrt(sigma_1 + sigma_2**2 * test_confidence**2)
 
         return test_predictions, test_confidence
 
@@ -50,7 +50,7 @@ class ConfidenceEstimator:
 
     def _calibrate_confidence(self, predictions, confidence):
         def objective_function(beta, confidence, errors):
-            pred_vars = np.clip(beta[0]**2 + confidence**2 * beta[1]**2, 0.001, None)
+            pred_vars = np.clip(np.abs(beta[0]) + confidence**2 * np.abs(beta[1]), 0.001, None)
             costs = np.log(pred_vars) / 2 + errors**2 / (2 * pred_vars)
 
             return(np.sum(costs))

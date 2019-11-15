@@ -4,7 +4,9 @@ import json
 import numpy as np
 import matplotlib.pyplot as plt
 import seaborn as sns
+import random
 from scipy import stats
+from scipy.optimize import minimize
 
 
 class EvaluationMethod:
@@ -265,6 +267,44 @@ class ConfidenceEvaluator:
 
         return all_evaluations
 
+    @staticmethod
+    def calibrate(file_path):
+        def objective_function(beta, confidence, errors):
+            pred_vars = np.clip(np.abs(beta[0]) + confidence**2 * np.abs(beta[1]), 0.001, None)
+            costs = np.log(pred_vars) / 2 + errors**2 / (2 * pred_vars)
+
+            return(np.sum(costs))
+        
+        def calibrate_sets(sets, sigmas):
+            calibrated_sets = []
+            for set_ in sets:
+                calibrated_set = set_
+                calibrated_set['confidence'] = sigmas[0] + set_['confidence'] * sigmas[1]
+                calibrated_sets.append(calibrated_set)
+            return calibrated_sets
+
+        f = open(file_path)
+        log = json.load(f)
+
+        scaled_log = {}
+        for task, data in log.items():
+            scaled_data = {}
+            sampled_data = random.sample(data['sets_by_error'], 30)
+
+            confidence = np.array([set_['confidence'] for set_ in sampled_data])
+            errors = np.array([set_['error'] for set_ in sampled_data])
+
+
+            beta_init = np.array([0, 1])
+            result = minimize(objective_function, beta_init, args=(confidence, errors),
+                            method='BFGS', options={'maxiter': 500})
+            scaled_data['sets_by_error'] = calibrate_sets(data['sets_by_error'], np.abs(result.x))
+            scaled_data['sets_by_confidence'] = calibrate_sets(data['sets_by_confidence'], np.abs(result.x))
+            scaled_log[task] = scaled_data
+        
+        f.close()
+
+        return scaled_log
 
 # OUTDATED VISUALIZATIONS
 # def confidence_visualizations(args: Namespace,
