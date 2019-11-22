@@ -35,8 +35,9 @@ def tsne_xy_coordinates(smiles_paths: List[str], save_dir: str):
     smiles, colors, scopes = [], [], []
     for smiles_path, color in zip(smiles_paths, COLORS):
         new_smiles = get_smiles(smiles_path)
+        new_smiles = new_smiles[:50]
         print(f'{os.path.basename(smiles_path)}: {len(new_smiles):,}')
-        scopes += slice(len(smiles), len(new_smiles))
+        scopes.append(slice(len(smiles), len(smiles) + len(new_smiles)))
         smiles += new_smiles
         colors += [color] * len(new_smiles)
 
@@ -74,7 +75,7 @@ def tsne_xy_coordinates(smiles_paths: List[str], save_dir: str):
     plt.figure(figsize=(6.4 * 10, 4.8 * 10))
 
     for (x, y), color in zip(X, colors):
-        plt.plot(x[0], x[1], marker='o', markersize=20, color=color)
+        plt.plot(x, y, marker='o', markersize=20, color=color)
 
     plt.xticks([]), plt.yticks([])
     plt.savefig(os.path.join(save_dir, 'tsne.png'))
