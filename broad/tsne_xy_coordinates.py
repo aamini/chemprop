@@ -35,7 +35,6 @@ def tsne_xy_coordinates(smiles_paths: List[str], save_dir: str):
     smiles, colors, scopes = [], [], []
     for smiles_path, color in zip(smiles_paths, COLORS):
         new_smiles = get_smiles(smiles_path)
-        new_smiles = new_smiles[:50]
         print(f'{os.path.basename(smiles_path)}: {len(new_smiles):,}')
         scopes.append(slice(len(smiles), len(smiles) + len(new_smiles)))
         smiles += new_smiles
