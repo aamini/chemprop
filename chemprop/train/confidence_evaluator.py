@@ -278,7 +278,7 @@ class ConfidenceEvaluator:
         def calibrate_sets(sets, sigmas):
             calibrated_sets = []
             for set_ in sets:
-                calibrated_set = set_
+                calibrated_set = set_.copy()
                 calibrated_set['confidence'] = sigmas[0] + set_['confidence'] * sigmas[1]
                 calibrated_sets.append(calibrated_set)
             return calibrated_sets
@@ -286,25 +286,32 @@ class ConfidenceEvaluator:
         f = open(file_path)
         log = json.load(f)
 
+        cleaned_log = {}
         scaled_log = {}
         for task, data in log.items():
-            scaled_data = {}
             sampled_data = random.sample(data['sets_by_error'], 30)
 
             confidence = np.array([set_['confidence'] for set_ in sampled_data])
             errors = np.array([set_['error'] for set_ in sampled_data])
 
-
             beta_init = np.array([0, 1])
             result = minimize(objective_function, beta_init, args=(confidence, errors),
                             method='BFGS', options={'maxiter': 500})
-            scaled_data['sets_by_error'] = calibrate_sets(data['sets_by_error'], np.abs(result.x))
-            scaled_data['sets_by_confidence'] = calibrate_sets(data['sets_by_confidence'], np.abs(result.x))
+            
+            # Remove sampled data from test set.
+            cleaned_data = {}
+            cleaned_data['sets_by_error'] = [set_ for set_ in data['sets_by_error'] if set_ not in sampled_data]
+            cleaned_data['sets_by_confidence'] = [set_ for set_ in data['sets_by_confidence'] if set_ not in sampled_data]
+            cleaned_log[task] = cleaned_data
+
+            scaled_data = {}
+            scaled_data['sets_by_error'] = calibrate_sets(cleaned_data['sets_by_error'], np.abs(result.x))
+            scaled_data['sets_by_confidence'] = calibrate_sets(cleaned_data['sets_by_confidence'], np.abs(result.x))
             scaled_log[task] = scaled_data
         
         f.close()
 
-        return scaled_log
+        return cleaned_log, scaled_log
 
 # OUTDATED VISUALIZATIONS
 # def confidence_visualizations(args: Namespace,

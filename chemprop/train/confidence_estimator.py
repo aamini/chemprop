@@ -20,7 +20,8 @@ def confidence_estimator_builder(confidence_method: str):
         'tanimoto': TanimotoEstimator,
         'ensemble': EnsembleEstimator,
         'latent_space': LatentSpaceEstimator,
-        'bootstrap': BootstrapEstimator
+        'bootstrap': BootstrapEstimator,
+        'snapshot': SnapshotEstimator
     }[confidence_method]
 
 
@@ -246,6 +247,11 @@ class EnsembleEstimator(ConfidenceEstimator):
 
 
 class BootstrapEstimator(EnsembleEstimator):
+    def __init__(self, train_data, val_data, test_data, scaler, args):
+        super().__init__(train_data, val_data, test_data, scaler, args)   
+
+
+class SnapshotEstimator(EnsembleEstimator):
     def __init__(self, train_data, val_data, test_data, scaler, args):
         super().__init__(train_data, val_data, test_data, scaler, args)   
 

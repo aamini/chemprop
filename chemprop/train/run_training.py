@@ -164,17 +164,18 @@ def run_training(args: Namespace, logger: Logger = None) -> List[float]:
         writer = SummaryWriter(log_dir=save_dir)
 
         # Load/build model
-        if args.checkpoint_paths is not None:
-            debug(
-                f'Loading model {model_idx} from {args.checkpoint_paths[model_idx]}')
-            model = load_checkpoint(
-                args.checkpoint_paths[model_idx], current_args=args, logger=logger)
-        else:
-            debug(f'Building model {model_idx}')
-            model = build_model(args)
+        if args.confidence != "snapshot" or model_idx == 0:
+            if args.checkpoint_paths is not None:
+                debug(
+                    f'Loading model {model_idx} from {args.checkpoint_paths[model_idx]}')
+                model = load_checkpoint(
+                    args.checkpoint_paths[model_idx], current_args=args, logger=logger)
+            else:
+                debug(f'Building model {model_idx}')
+                model = build_model(args)
 
-        debug(model)
-        debug(f'Number of parameters = {param_count(model):,}')
+            debug(model)
+            debug(f'Number of parameters = {param_count(model):,}')
         if args.cuda:
             debug('Moving model to cuda')
             model = model.cuda()
@@ -189,10 +190,14 @@ def run_training(args: Namespace, logger: Logger = None) -> List[float]:
         # Learning rate schedulers
         scheduler = build_lr_scheduler(optimizer, args)
 
+        num_epochs = args.epochs
+        if args.confidence == "snapshot":
+            num_epochs = num_epochs // args.ensemble_size
+
         # Run training
         best_score = float('inf') if args.minimize_score else -float('inf')
         best_epoch, n_iter = 0, 0
-        for epoch in trange(args.epochs):
+        for epoch in trange(num_epochs):
             debug(f'Epoch {epoch}')
 
             train_data_sample = train_data
