@@ -7,6 +7,11 @@ from .mpn import MPN
 from chemprop.nn_utils import get_activation_function, initialize_weights
 
 
+class EvaluationDropout(nn.Dropout):
+    def forward(self, input):
+        return nn.functional.dropout(input, p = self.p)
+
+
 class MoleculeModel(nn.Module):
     """A MoleculeModel is a model which contains a message passing network following by feed-forward layers."""
 
@@ -45,7 +50,12 @@ class MoleculeModel(nn.Module):
         if args.use_input_features:
             first_linear_dim += args.features_dim
 
-        dropout = nn.Dropout(args.dropout)
+        # When using dropout for confidence, use dropouts for evaluation in addition to training.
+        if args.confidence == 'dropout':
+            dropout = EvaluationDropout(args.dropout)
+        else:
+            dropout = nn.Dropout(args.dropout)
+
         activation = get_activation_function(args.activation)
 
         output_size = args.output_size

@@ -164,7 +164,7 @@ def run_training(args: Namespace, logger: Logger = None) -> List[float]:
         writer = SummaryWriter(log_dir=save_dir)
 
         # Load/build model
-        if args.confidence != "snapshot" or model_idx == 0:
+        if args.confidence not in ['snapshot', 'dropout'] or model_idx == 0:
             if args.checkpoint_paths is not None:
                 debug(
                     f'Loading model {model_idx} from {args.checkpoint_paths[model_idx]}')
@@ -191,8 +191,11 @@ def run_training(args: Namespace, logger: Logger = None) -> List[float]:
         scheduler = build_lr_scheduler(optimizer, args)
 
         num_epochs = args.epochs
-        if args.confidence == "snapshot":
+        if args.confidence == 'snapshot':
             num_epochs = num_epochs // args.ensemble_size
+        
+        if args.confidence == 'dropout' and model_idx != 0:
+            num_epochs = 0
 
         # Run training
         best_score = float('inf') if args.minimize_score else -float('inf')

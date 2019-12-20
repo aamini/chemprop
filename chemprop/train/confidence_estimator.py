@@ -21,7 +21,8 @@ def confidence_estimator_builder(confidence_method: str):
         'ensemble': EnsembleEstimator,
         'latent_space': LatentSpaceEstimator,
         'bootstrap': BootstrapEstimator,
-        'snapshot': SnapshotEstimator
+        'snapshot': SnapshotEstimator,
+        'dropout': DropoutEstimator
     }[confidence_method]
 
 
@@ -252,6 +253,11 @@ class BootstrapEstimator(EnsembleEstimator):
 
 
 class SnapshotEstimator(EnsembleEstimator):
+    def __init__(self, train_data, val_data, test_data, scaler, args):
+        super().__init__(train_data, val_data, test_data, scaler, args)   
+
+
+class DropoutEstimator(EnsembleEstimator):
     def __init__(self, train_data, val_data, test_data, scaler, args):
         super().__init__(train_data, val_data, test_data, scaler, args)   
 

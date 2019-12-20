@@ -288,6 +288,8 @@ class ConfidenceEvaluator:
 
         cleaned_log = {}
         scaled_log = {}
+
+        calibration_coefficients = {}
         for task, data in log.items():
             sampled_data = random.sample(data['sets_by_error'], 30)
 
@@ -297,6 +299,8 @@ class ConfidenceEvaluator:
             beta_init = np.array([0, 1])
             result = minimize(objective_function, beta_init, args=(confidence, errors),
                             method='BFGS', options={'maxiter': 500})
+            
+            calibration_coefficients[task] = np.abs(result.x)
             
             # Remove sampled data from test set.
             cleaned_data = {}
@@ -311,7 +315,7 @@ class ConfidenceEvaluator:
         
         f.close()
 
-        return cleaned_log, scaled_log
+        return cleaned_log, scaled_log, calibration_coefficients
 
 # OUTDATED VISUALIZATIONS
 # def confidence_visualizations(args: Namespace,
