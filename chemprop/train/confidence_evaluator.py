@@ -268,18 +268,26 @@ class ConfidenceEvaluator:
         return all_evaluations
 
     @staticmethod
-    def calibrate(file_path):
-        def objective_function(beta, confidence, errors):
-            pred_vars = np.clip(np.abs(beta[0]) + confidence**2 * np.abs(beta[1]), 0.001, None)
+    def calibrate(lambdas, beta_init, file_path):
+        def objective_function(beta, confidence, errors, lambdas):
+            # Construct prediction through lambdas and betas.
+            pred_vars = np.zeros(len(confidence))
+            
+            for i in range(len(beta)):
+                pred_vars += np.abs(beta[i]) * lambdas[i](confidence**2)
+            pred_vars = np.clip(pred_vars, 0.001, None)
             costs = np.log(pred_vars) / 2 + errors**2 / (2 * pred_vars)
 
             return(np.sum(costs))
         
-        def calibrate_sets(sets, sigmas):
+        def calibrate_sets(sets, sigmas, lambdas):
             calibrated_sets = []
             for set_ in sets:
                 calibrated_set = set_.copy()
-                calibrated_set['confidence'] = sigmas[0] + set_['confidence'] * sigmas[1]
+                calibrated_set['confidence'] = 0
+                
+                for i in range(len(sigmas)):
+                    calibrated_set['confidence'] += sigmas[i] * lambdas[i](set_['confidence']**2)
                 calibrated_sets.append(calibrated_set)
             return calibrated_sets
 
@@ -296,8 +304,8 @@ class ConfidenceEvaluator:
             confidence = np.array([set_['confidence'] for set_ in sampled_data])
             errors = np.array([set_['error'] for set_ in sampled_data])
 
-            beta_init = np.array([0, 1])
-            result = minimize(objective_function, beta_init, args=(confidence, errors),
+            # beta_init = np.array([0, 1])
+            result = minimize(objective_function, beta_init, args=(confidence, errors, lambdas),
                             method='BFGS', options={'maxiter': 500})
             
             calibration_coefficients[task] = np.abs(result.x)
@@ -309,8 +317,8 @@ class ConfidenceEvaluator:
             cleaned_log[task] = cleaned_data
 
             scaled_data = {}
-            scaled_data['sets_by_error'] = calibrate_sets(cleaned_data['sets_by_error'], np.abs(result.x))
-            scaled_data['sets_by_confidence'] = calibrate_sets(cleaned_data['sets_by_confidence'], np.abs(result.x))
+            scaled_data['sets_by_error'] = calibrate_sets(cleaned_data['sets_by_error'], np.abs(result.x), lambdas)
+            scaled_data['sets_by_confidence'] = calibrate_sets(cleaned_data['sets_by_confidence'], np.abs(result.x), lambdas)
             scaled_log[task] = scaled_data
         
         f.close()
