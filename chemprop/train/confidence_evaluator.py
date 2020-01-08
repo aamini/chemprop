@@ -161,6 +161,53 @@ class LogLikelihood(EvaluationMethod):
         print(task, "-", "Sum of Log Likelihoods:", evaluation["log_likelihood"])
 
 
+class CalibrationAUC(EvaluationMethod):
+    def __init__(self):
+        self.name = "calibration_auc"
+
+    def evaluate(self, data):
+        standard_devs = [np.abs(set_["error"])/set_["confidence"] for set_ in data["sets_by_confidence"]]
+        probabilities = [2 * (stats.norm.cdf(standard_dev) - 0.5) for standard_dev in standard_devs]
+        sorted_probabilities = sorted(probabilities)
+
+        fraction_under_thresholds = []
+        threshold = 0
+
+        for i in range(len(sorted_probabilities)):
+            while sorted_probabilities[i] > threshold:
+                fraction_under_thresholds.append(i/len(sorted_probabilities))
+                threshold += 0.001
+
+        # Condition used 1.0001 to catch floating point errors.
+        while threshold < 1.0001:
+            fraction_under_thresholds.append(1)
+            threshold += 0.001
+
+        thresholds = np.linspace(0, 1, num=1001)
+        miscalibration = [np.abs(fraction_under_thresholds[i] - thresholds[i]) for i in range(len(thresholds))]
+        miscalibration_area = 0
+        for i in range(1, 1001):
+            miscalibration_area += np.average([miscalibration[i-1], miscalibration[i]]) * 0.001
+
+
+        
+        return {"fraction_under_thresholds": fraction_under_thresholds,
+                "thresholds": thresholds,
+                "miscalibration_area": miscalibration_area}
+    
+    def _visualize(self, task, evaluation):
+        # Ideal curve.
+        plt.plot(evaluation["thresholds"], evaluation["thresholds"])
+
+        # True curve.
+        plt.plot(evaluation["thresholds"], evaluation["fraction_under_thresholds"])
+        print(task, '-', 'Miscalibration Area', evaluation['miscalibration_area'])
+
+        plt.title(task)
+
+        plt.show()
+
+
 class Boxplot(EvaluationMethod):
     def __init__(self):
         self.name = "boxplot"
@@ -198,7 +245,7 @@ class Boxplot(EvaluationMethod):
 
 
 class ConfidenceEvaluator:
-    methods = [Cutoffs(), AbsScatter(), LogScatter(), Spearman(), LogLikelihood(), Boxplot()]
+    methods = [Cutoffs(), AbsScatter(), LogScatter(), Spearman(), LogLikelihood(), Boxplot(), CalibrationAUC()]
 
     @staticmethod
     def save(predictions, targets, confidence, args):
