@@ -40,33 +40,10 @@ class ConfidenceEstimator:
     def compute_confidence(self, test_predictions):
         test_predictions, test_confidence = self._compute_confidence(test_predictions)
 
-        if self.args.calibrate_confidence:
-            sigma_1, sigma_2 = self._calibrate_confidence(test_predictions, test_confidence)
-            return test_predictions, np.sqrt(sigma_1 + sigma_2**2 * test_confidence**2)
-
         return test_predictions, test_confidence
-
 
     def _compute_confidence(self, test_predictions):
         pass
-
-    def _calibrate_confidence(self, predictions, confidence):
-        def objective_function(beta, confidence, errors):
-            pred_vars = np.clip(np.abs(beta[0]) + confidence**2 * np.abs(beta[1]), 0.001, None)
-            costs = np.log(pred_vars) / 2 + errors**2 / (2 * pred_vars)
-
-            return(np.sum(costs))
-        
-        errors = predictions - self.test_data.targets()
-        sample = random.sample(list(range(len(confidence))), 30)
-        sample_confidence = confidence[sample, :]
-        sample_errors = errors[sample, :]
-
-        beta_init = np.array([0, 1])
-        result = minimize(objective_function, beta_init, args=(sample_confidence, sample_errors),
-                        method='BFGS', options={'maxiter': 500})
-
-        return np.abs(result.x)
 
     def _scale_confidence(self, confidence):
         return self.scaler.stds * confidence

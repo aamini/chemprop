@@ -248,8 +248,17 @@ class ConfidenceEvaluator:
     methods = [Cutoffs(), AbsScatter(), LogScatter(), Spearman(), LogLikelihood(), Boxplot(), CalibrationAUC()]
 
     @staticmethod
-    def save(predictions, targets, confidence, args):
+    def save(val_predictions, val_targets, val_confidence, test_predictions, test_targets, test_confidence, args):
         f = open(args.save_confidence, 'w+')
+
+        val_data = ConfidenceEvaluator._log(val_predictions, val_targets, val_confidence, args)
+        test_data = ConfidenceEvaluator._log(test_predictions, test_targets, test_confidence, args)
+
+        json.dump({"validation": val_data, "test": test_data}, f)
+        f.close()
+
+    @staticmethod
+    def _log(predictions, targets, confidence, args):
         log = {}
 
         # Loop through all subtasks.    
@@ -282,13 +291,12 @@ class ConfidenceEvaluator:
                 "sets_by_confidence": sets_by_confidence,
                 "sets_by_error": sets_by_error}
 
-        json.dump(log, f)
-        f.close()
+        return log
 
     @staticmethod
     def visualize(file_path, methods):
         f = open(file_path)
-        log = json.load(f)
+        log = json.load(f)["test"]
 
         for task, data in log.items():
             for method in ConfidenceEvaluator.methods:
@@ -300,7 +308,7 @@ class ConfidenceEvaluator:
     @staticmethod
     def evaluate(file_path, methods):
         f = open(file_path)
-        log = json.load(f)
+        log = json.load(f)["test"]
 
         all_evaluations = {}
         for task, data in log.items():
@@ -339,38 +347,40 @@ class ConfidenceEvaluator:
             return calibrated_sets
 
         f = open(file_path)
-        log = json.load(f)
+        full_log = json.load(f)
+        val_log = full_log['validation']
+        test_log = full_log['test']
 
-        cleaned_log = {}
-        scaled_log = {}
+        scaled_val_log = {}
+        scaled_test_log = {}
 
         calibration_coefficients = {}
-        for task, data in log.items():
-            sampled_data = random.sample(data['sets_by_error'], 30)
+        for task in val_log:
+            # Sample from validation data.
+            sampled_data = random.sample(val_log[task]['sets_by_error'], 30)
 
+            # Calibrate based on sampled data.
             confidence = np.array([set_['confidence'] for set_ in sampled_data])
             errors = np.array([set_['error'] for set_ in sampled_data])
 
-            # beta_init = np.array([0, 1])
             result = minimize(objective_function, beta_init, args=(confidence, errors, lambdas),
                             method='BFGS', options={'maxiter': 500})
             
             calibration_coefficients[task] = np.abs(result.x)
-            
-            # Remove sampled data from test set.
-            cleaned_data = {}
-            cleaned_data['sets_by_error'] = [set_ for set_ in data['sets_by_error'] if set_ not in sampled_data]
-            cleaned_data['sets_by_confidence'] = [set_ for set_ in data['sets_by_confidence'] if set_ not in sampled_data]
-            cleaned_log[task] = cleaned_data
 
-            scaled_data = {}
-            scaled_data['sets_by_error'] = calibrate_sets(cleaned_data['sets_by_error'], np.abs(result.x), lambdas)
-            scaled_data['sets_by_confidence'] = calibrate_sets(cleaned_data['sets_by_confidence'], np.abs(result.x), lambdas)
-            scaled_log[task] = scaled_data
+            scaled_val_data = {}
+            scaled_val_data['sets_by_error'] = calibrate_sets(val_log[task]['sets_by_error'], np.abs(result.x), lambdas)
+            scaled_val_data['sets_by_confidence'] = calibrate_sets(val_log[task]['sets_by_confidence'], np.abs(result.x), lambdas)
+            scaled_val_log[task] = scaled_val_data
+
+            scaled_test_data = {}
+            scaled_test_data['sets_by_error'] = calibrate_sets(test_log[task]['sets_by_error'], np.abs(result.x), lambdas)
+            scaled_test_data['sets_by_confidence'] = calibrate_sets(test_log[task]['sets_by_confidence'], np.abs(result.x), lambdas)
+            scaled_test_log[task] = scaled_test_data
         
         f.close()
 
-        return cleaned_log, scaled_log, calibration_coefficients
+        return {'validation': scaled_val_log, 'test': scaled_test_log}, calibration_coefficients
 
 # OUTDATED VISUALIZATIONS
 # def confidence_visualizations(args: Namespace,

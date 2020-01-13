@@ -151,7 +151,9 @@ def run_training(args: Namespace, logger: Logger = None) -> List[float]:
 
     # Set up test set evaluation
     test_smiles, test_targets = test_data.smiles(), test_data.targets()
+    val_smiles, val_targets = val_data.smiles(), val_data.targets()
     sum_test_preds = np.zeros((len(test_smiles), args.num_tasks))
+    sum_val_preds = np.zeros((len(val_smiles), args.num_tasks))
 
     if args.confidence:
         confidence_estimator = confidence_estimator_builder(args.confidence)(train_data, val_data, test_data, scaler, args)
@@ -267,6 +269,13 @@ def run_training(args: Namespace, logger: Logger = None) -> List[float]:
             scaler=scaler,
         )
 
+        val_preds = predict(
+            model=model,
+            data=val_data,
+            batch_size=args.batch_size,
+            scaler=scaler,
+        )
+
         test_scores = evaluate_predictions(
             preds=test_preds,
             targets=test_targets,
@@ -278,6 +287,7 @@ def run_training(args: Namespace, logger: Logger = None) -> List[float]:
 
         if len(test_preds) != 0:
             sum_test_preds += np.array(test_preds)
+            sum_val_preds += np.array(val_preds)
 
         # Average test score
         avg_test_score = np.nanmean(test_scores)
@@ -297,6 +307,7 @@ def run_training(args: Namespace, logger: Logger = None) -> List[float]:
 
     # Evaluate ensemble on test set
     avg_test_preds = (sum_test_preds / args.ensemble_size)
+    avg_val_preds = (sum_val_preds / args.ensemble_size)
 
     ensemble_scores = evaluate_predictions(
         preds=avg_test_preds.tolist(),
@@ -313,12 +324,22 @@ def run_training(args: Namespace, logger: Logger = None) -> List[float]:
     writer.add_scalar(
         f'ensemble_test_{args.metric}', avg_ensemble_test_score, 0)
 
-    targets = np.array(test_targets)
-
     if args.confidence:
-        predictions, confidence = confidence_estimator.compute_confidence(avg_test_preds)
+        val_targets = np.array(val_targets)
+        test_targets = np.array(test_targets)
 
-        ConfidenceEvaluator.save(predictions, targets, confidence, args)
+
+        val_predictions, val_confidence = confidence_estimator.compute_confidence(avg_val_preds)
+        test_predictions, test_confidence = confidence_estimator.compute_confidence(avg_test_preds)
+
+        ConfidenceEvaluator.save(val_predictions,
+                                 val_targets,
+                                 val_confidence,
+                                 test_predictions,
+                                 test_targets,
+                                 test_confidence,
+                                 args)
+
         ConfidenceEvaluator.visualize(args.save_confidence, args.confidence_evaluation_methods)
 
     return ensemble_scores
