@@ -46,7 +46,7 @@ def train(model: nn.Module,
     data.shuffle()
 
     if args.confidence == 'bootstrap':
-        data.sample(int(1.5 * len(data) / args.ensemble_size))
+        data.sample(int(4 * len(data) / args.ensemble_size))
 
     loss_sum, iter_count = 0, 0
 
