@@ -26,21 +26,21 @@ class EvaluationMethod:
 
 class Cutoffs(EvaluationMethod):
     def __init__(self):
-        self.name = "cutoff"
+        self.name = 'cutoff'
 
     def evaluate(self, data):
         cutoff = []
         rmse = []
         ideal_rmse = []
 
-        square_error = [set_["error"]**2 for set_ in data["sets_by_confidence"]]
-        ideal_square_error = [set_["error"]**2 for set_ in data["sets_by_error"]]
+        square_error = [set_['error']**2 for set_ in data['sets_by_confidence']]
+        ideal_square_error = [set_['error']**2 for set_ in data['sets_by_error']]
 
         total_square_error = np.sum(square_error)
         ideal_total_square_error = np.sum(ideal_square_error)
 
         for i in range(len(square_error)):
-            cutoff.append(data["sets_by_confidence"][i]["confidence"])
+            cutoff.append(data['sets_by_confidence'][i]['confidence'])
 
             rmse.append(np.sqrt(total_square_error/len(square_error[i:])))
             total_square_error -= square_error[i]
@@ -48,13 +48,13 @@ class Cutoffs(EvaluationMethod):
             ideal_rmse.append(np.sqrt(ideal_total_square_error / len(square_error[i:])))
             ideal_total_square_error -= ideal_square_error[i]
 
-        return {"cutoff": cutoff, "rmse": rmse, "ideal_rmse": ideal_rmse}
+        return {'cutoff': cutoff, 'rmse': rmse, 'ideal_rmse': ideal_rmse}
 
     def _visualize(self, task, evaluation):
-        percentiles = np.linspace(0, 100, len(evaluation["rmse"]))
+        percentiles = np.linspace(0, 100, len(evaluation['rmse']))
 
-        plt.plot(percentiles, evaluation["rmse"])
-        plt.plot(percentiles, evaluation["ideal_rmse"])
+        plt.plot(percentiles, evaluation['rmse'])
+        plt.plot(percentiles, evaluation['ideal_rmse'])
 
         plt.xlabel('Percent of Data Discarded')
         plt.ylabel('RMSE')
@@ -66,21 +66,21 @@ class Cutoffs(EvaluationMethod):
 
 class Scatter(EvaluationMethod):
     def __init__(self):
-        self.name = "scatter"
+        self.name = 'scatter'
         self.x_axis_label = 'Confidence'
         self.y_axis_label = 'Error'
 
     def evaluate(self, data):
-        confidence = [self._x_filter(set_["confidence"])
-                      for set_ in data["sets_by_confidence"]]
-        error = [self._y_filter(set_["error"])
-                 for set_ in data["sets_by_confidence"]]
+        confidence = [self._x_filter(set_['confidence'])
+                      for set_ in data['sets_by_confidence']]
+        error = [self._y_filter(set_['error'])
+                 for set_ in data['sets_by_confidence']]
 
         slope, intercept, _, _, _ = stats.linregress(confidence, error)
 
-        return {"confidence": confidence,
-                "error": error,
-                "best_fit_y": slope * np.array(confidence) + intercept}
+        return {'confidence': confidence,
+                'error': error,
+                'best_fit_y': slope * np.array(confidence) + intercept}
 
     def _x_filter(self, x):
         return x
@@ -101,7 +101,7 @@ class Scatter(EvaluationMethod):
 
 class AbsScatter(Scatter):
     def __init__(self):
-        self.name = "abs_scatter"
+        self.name = 'abs_scatter'
         self.x_axis_label = 'Confidence'
         self.y_axis_label = 'Absolute Value of Error'
 
@@ -111,7 +111,7 @@ class AbsScatter(Scatter):
 
 class LogScatter(Scatter):
     def __init__(self):
-        self.name = "log_scatter"
+        self.name = 'log_scatter'
         self.x_axis_label = 'Log Confidence'
         self.y_axis_label = 'Log Absolute Value of Error'
 
@@ -124,49 +124,49 @@ class LogScatter(Scatter):
 
 class Spearman(EvaluationMethod):
     def __init__(self):
-        self.name = "spearman"
+        self.name = 'spearman'
 
     def evaluate(self, data):
-        confidence = [set_["confidence"]
-                      for set_ in data["sets_by_confidence"]]
-        error = [set_["error"]
-                 for set_ in data["sets_by_confidence"]]
+        confidence = [set_['confidence']
+                      for set_ in data['sets_by_confidence']]
+        error = [set_['error']
+                 for set_ in data['sets_by_confidence']]
 
         rho, p = stats.spearmanr(confidence, np.abs(error))
 
-        return {"rho": rho, "p": p}
+        return {'rho': rho, 'p': p}
 
     def _visualize(self, task, evaluation):
-        print(task, "-", "Spearman Rho:", evaluation["rho"])
-        print(task, "-", "Spearman p-value:", evaluation["p"])
+        print(task, '-', 'Spearman Rho:', evaluation['rho'])
+        print(task, '-', 'Spearman p-value:', evaluation['p'])
 
 
 class LogLikelihood(EvaluationMethod):
     def __init__(self):
-        self.name = "log_likelihood"
+        self.name = 'log_likelihood'
 
     def evaluate(self, data):
         log_likelihood = 0
 
-        for set_ in data["sets_by_confidence"]:
+        for set_ in data['sets_by_confidence']:
             # Encourage small standard deviations.
-            log_likelihood -= np.log(2 * np.pi * max(0.01, set_["confidence"]**2)) / 2
+            log_likelihood -= np.log(2 * np.pi * max(0.01, set_['confidence']**2)) / 2
 
             # Penalize for large error.
-            log_likelihood -= set_["error"]**2/(2 * max(0.01, set_["confidence"]**2))
+            log_likelihood -= set_['error']**2/(2 * max(0.01, set_['confidence']**2))
 
-        return {"log_likelihood": log_likelihood}
+        return {'log_likelihood': log_likelihood}
 
     def _visualize(self, task, evaluation):
-        print(task, "-", "Sum of Log Likelihoods:", evaluation["log_likelihood"])
+        print(task, '-', 'Sum of Log Likelihoods:', evaluation['log_likelihood'])
 
 
 class CalibrationAUC(EvaluationMethod):
     def __init__(self):
-        self.name = "calibration_auc"
+        self.name = 'calibration_auc'
 
     def evaluate(self, data):
-        standard_devs = [np.abs(set_["error"])/set_["confidence"] for set_ in data["sets_by_confidence"]]
+        standard_devs = [np.abs(set_['error'])/set_['confidence'] for set_ in data['sets_by_confidence']]
         probabilities = [2 * (stats.norm.cdf(standard_dev) - 0.5) for standard_dev in standard_devs]
         sorted_probabilities = sorted(probabilities)
 
@@ -191,16 +191,16 @@ class CalibrationAUC(EvaluationMethod):
 
 
         
-        return {"fraction_under_thresholds": fraction_under_thresholds,
-                "thresholds": thresholds,
-                "miscalibration_area": miscalibration_area}
+        return {'fraction_under_thresholds': fraction_under_thresholds,
+                'thresholds': thresholds,
+                'miscalibration_area': miscalibration_area}
     
     def _visualize(self, task, evaluation):
         # Ideal curve.
-        plt.plot(evaluation["thresholds"], evaluation["thresholds"])
+        plt.plot(evaluation['thresholds'], evaluation['thresholds'])
 
         # True curve.
-        plt.plot(evaluation["thresholds"], evaluation["fraction_under_thresholds"])
+        plt.plot(evaluation['thresholds'], evaluation['fraction_under_thresholds'])
         print(task, '-', 'Miscalibration Area', evaluation['miscalibration_area'])
 
         plt.title(task)
@@ -210,38 +210,38 @@ class CalibrationAUC(EvaluationMethod):
 
 class Boxplot(EvaluationMethod):
     def __init__(self):
-        self.name = "boxplot"
+        self.name = 'boxplot'
 
     def evaluate(self, data):
         errors_by_confidence = [[] for _ in range(10)]
 
-        min_confidence = data["sets_by_confidence"][-1]["confidence"]
-        max_confidence = data["sets_by_confidence"][0]["confidence"]
+        min_confidence = data['sets_by_confidence'][-1]['confidence']
+        max_confidence = data['sets_by_confidence'][0]['confidence']
         confidence_range = max_confidence - min_confidence
 
-        for pair in data["sets_by_confidence"]:
+        for pair in data['sets_by_confidence']:
             errors_by_confidence[min(
-                int((pair["confidence"] - min_confidence)//(confidence_range / 10)),
-                9)].append(pair["error"])
+                int((pair['confidence'] - min_confidence)//(confidence_range / 10)),
+                9)].append(pair['error'])
 
-        return {"errors_by_confidence": errors_by_confidence,
-                "min_confidence": min_confidence,
-                "max_confidence": max_confidence,
-                "data": data}
+        return {'errors_by_confidence': errors_by_confidence,
+                'min_confidence': min_confidence,
+                'max_confidence': max_confidence,
+                'data': data}
 
     def _visualize(self, task, evaluation):
-        errors_by_confidence = evaluation["errors_by_confidence"]
-        x_vals = list(np.linspace(evaluation["min_confidence"],
-                                  evaluation["max_confidence"],
+        errors_by_confidence = evaluation['errors_by_confidence']
+        x_vals = list(np.linspace(evaluation['min_confidence'],
+                                  evaluation['max_confidence'],
                                   num=len(errors_by_confidence),
-                                  endpoint=False) + (evaluation["max_confidence"] - evaluation["min_confidence"])/(len(errors_by_confidence) * 2))
+                                  endpoint=False) + (evaluation['max_confidence'] - evaluation['min_confidence'])/(len(errors_by_confidence) * 2))
         plt.boxplot(errors_by_confidence, positions=x_vals, widths=(0.02))
 
         names = (
             f'{len(errors_by_confidence[i])} points' for i in range(10))
         plt.xticks(x_vals, names)
-        plt.xlim((evaluation["min_confidence"], evaluation["max_confidence"]))
-        Scatter().visualize(task, evaluation["data"])
+        plt.xlim((evaluation['min_confidence'], evaluation['max_confidence']))
+        Scatter().visualize(task, evaluation['data'])
 
 
 class ConfidenceEvaluator:
@@ -254,7 +254,7 @@ class ConfidenceEvaluator:
         val_data = ConfidenceEvaluator._log(val_predictions, val_targets, val_confidence, args)
         test_data = ConfidenceEvaluator._log(test_predictions, test_targets, test_confidence, args)
 
-        json.dump({"validation": val_data, "test": test_data}, f)
+        json.dump({'validation': val_data, 'test': test_data}, f)
         f.close()
 
     @staticmethod
@@ -270,33 +270,33 @@ class ConfidenceEvaluator:
             task_confidence = np.extract(mask, confidence[:, task])
             task_error = list(task_predictions - task_targets)
 
-            task_sets = [{"prediction": task_set[0],
-                          "target": task_set[1],
-                          "confidence": task_set[2],
-                          "error": task_set[3]} for task_set in zip(
+            task_sets = [{'prediction': task_set[0],
+                          'target': task_set[1],
+                          'confidence': task_set[2],
+                          'error': task_set[3]} for task_set in zip(
                                         task_predictions,
                                         task_targets,
                                         task_confidence,
                                         task_error)]
 
             sets_by_confidence = sorted(task_sets,
-                                        key=lambda pair: pair["confidence"],
+                                        key=lambda pair: pair['confidence'],
                                         reverse=True)
 
             sets_by_error = sorted(task_sets,
-                                   key=lambda pair: np.abs(pair["error"]),
+                                   key=lambda pair: np.abs(pair['error']),
                                    reverse=True)
 
             log[args.task_names[task]] = {
-                "sets_by_confidence": sets_by_confidence,
-                "sets_by_error": sets_by_error}
+                'sets_by_confidence': sets_by_confidence,
+                'sets_by_error': sets_by_error}
 
         return log
 
     @staticmethod
     def visualize(file_path, methods):
         f = open(file_path)
-        log = json.load(f)["test"]
+        log = json.load(f)['test']
 
         for task, data in log.items():
             for method in ConfidenceEvaluator.methods:
@@ -308,7 +308,7 @@ class ConfidenceEvaluator:
     @staticmethod
     def evaluate(file_path, methods):
         f = open(file_path)
-        log = json.load(f)["test"]
+        log = json.load(f)['test']
 
         all_evaluations = {}
         for task, data in log.items():
@@ -398,7 +398,7 @@ class ConfidenceEvaluator:
 
 #     if args.c_cutoff_discrete:
 #         print(
-#             f'----Cutoffs Generated Using "{args.confidence}" Estimation Process----')
+#             f'----Cutoffs Generated Using '{args.confidence}' Estimation Process----')
 #         for i in range(10):
 #             c = int((i/10) * len(sets_by_confidence))
 #             kept = (len(sets_by_confidence) - c) / len(sets_by_confidence)
@@ -523,8 +523,8 @@ class ConfidenceEvaluator:
 #         names = (
 #             f'{i} to {i+1} \n {len(errors_by_confidence[i])} points' for i in range(10))
 #         plt.xticks(list(range(10)), names)
-#         plt.xlabel("Confidence")
-#         plt.ylabel("Percent of Test Points")
+#         plt.xlabel('Confidence')
+#         plt.ylabel('Percent of Test Points')
 #         plt.legend()
 
 #         plt.show()
@@ -544,7 +544,7 @@ class ConfidenceEvaluator:
 #         names = (
 #             f'{i} to {i+1} \n {len(errors_by_confidence[i])} points' for i in range(10))
 #         plt.xticks(list(range(1, 11)), names)
-#         plt.xlabel("Confidence")
-#         plt.ylabel("Absolute Value of Error")
+#         plt.xlabel('Confidence')
+#         plt.ylabel('Absolute Value of Error')
 #         plt.legend()
 #         plt.show()
