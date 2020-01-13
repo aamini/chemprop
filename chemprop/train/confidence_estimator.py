@@ -165,7 +165,7 @@ class RandomForestEstimator(DroppingEstimator):
         transformed_val = self.scaler.transform(
             np.array(self.val_data.targets()))
 
-        n_trees = 100
+        n_trees = 128
         for task in range(self.args.num_tasks):
             forest = RandomForestRegressor(n_estimators=n_trees)
             forest.fit(avg_last_hidden_val, transformed_val[:, task])
