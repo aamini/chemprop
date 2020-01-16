@@ -1,6 +1,7 @@
 from argparse import Namespace
 
 from sklearn.gaussian_process import GaussianProcessClassifier, GaussianProcessRegressor
+import torch
 import torch.nn as nn
 
 from .mpn import MPN
@@ -106,6 +107,16 @@ class MoleculeModel(nn.Module):
         ffn = self.ffn if self.use_last_hidden else nn.Sequential(
             *list(self.ffn.children())[:-1])
         output = ffn(self.encoder(*input))
+
+        if self.confidence:
+            even_indices = torch.tensor(range(0, list(output.size())[1], 2))
+            odd_indices = torch.tensor(range(1, list(output.size())[1], 2))
+
+            predicted_means = torch.index_select(output, 1, even_indices)
+            predicted_confidences = torch.index_select(output, 1, odd_indices)
+            capped_confidences = nn.functional.softplus(predicted_confidences)
+
+            output = torch.stack((predicted_means, capped_confidences), dim = 2).view(output.size())
 
         # Don't apply sigmoid during training b/c using BCEWithLogitsLoss
         if self.classification and not self.training and self.use_last_hidden:
