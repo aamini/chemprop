@@ -85,7 +85,7 @@ def add_train_args(parser: ArgumentParser):
     parser.add_argument('--separate_test_features_path', type=str, nargs='*',
                         help='Path to file with features for separate test set')
     parser.add_argument('--split_type', type=str, default='random',
-                        choices=['random', 'scaffold_balanced',
+                        choices=['random', 'scaffold_balanced', 'scaffold',
                                  'predetermined'],
                         help='Method of splitting the data into train/val/test')
     parser.add_argument('--split_sizes', type=float, nargs=3, default=[0.8, 0.1, 0.1],

@@ -250,6 +250,9 @@ def split_data(data: MoleculeDataset,
     
     elif split_type == 'scaffold_balanced':
         return scaffold_split(data, sizes=sizes, balanced=True, seed=seed, logger=logger)
+    
+    elif split_type == 'scaffold':
+        return scaffold_split(data, sizes=sizes, balanced=False, seed=seed, logger=logger)
 
     elif split_type == 'random':
         data.shuffle(seed=seed)

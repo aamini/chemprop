@@ -147,15 +147,17 @@ class LogLikelihood(EvaluationMethod):
 
     def evaluate(self, data):
         log_likelihood = 0
-
+        optimal_log_likelihood = 0
         for set_ in data['sets_by_confidence']:
             # Encourage small standard deviations.
             log_likelihood -= np.log(2 * np.pi * max(0.01, set_['confidence']**2)) / 2
-
+            optimal_log_likelihood -= np.log(2 * np.pi * max(0.01, set_['error']**2)) / 2
             # Penalize for large error.
             log_likelihood -= set_['error']**2/(2 * max(0.01, set_['confidence']**2))
+            optimal_log_likelihood -= set_['error']**2/(2 * max(0.01, set_['error']**2))
 
-        return {'log_likelihood': log_likelihood}
+        return {'log_likelihood': log_likelihood,
+                'optimal_log_likelihood': optimal_log_likelihood}
 
     def _visualize(self, task, evaluation):
         print(task, '-', 'Sum of Log Likelihoods:', evaluation['log_likelihood'])
