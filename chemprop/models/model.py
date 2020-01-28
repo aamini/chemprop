@@ -40,6 +40,7 @@ class MoleculeModel(nn.Module):
         :param args: Arguments.
         """
         self.encoder = MPN(args)
+        self.args = args
 
     def create_ffn(self, args: Namespace):
         """
@@ -111,6 +112,10 @@ class MoleculeModel(nn.Module):
         if self.confidence:
             even_indices = torch.tensor(range(0, list(output.size())[1], 2))
             odd_indices = torch.tensor(range(1, list(output.size())[1], 2))
+
+            if self.args.cuda:
+                even_indices = even_indices.cuda()
+                odd_indices = odd_indices.cuda()
 
             predicted_means = torch.index_select(output, 1, even_indices)
             predicted_confidences = torch.index_select(output, 1, odd_indices)

@@ -1,7 +1,6 @@
 import random
 import numpy as np
 import GPy
-import forestci as fci
 import heapq
 from argparse import Namespace
 from sklearn.ensemble import RandomForestClassifier, RandomForestRegressor
@@ -22,7 +21,9 @@ def confidence_estimator_builder(confidence_method: str):
         'latent_space': LatentSpaceEstimator,
         'bootstrap': BootstrapEstimator,
         'snapshot': SnapshotEstimator,
-        'dropout': DropoutEstimator
+        'dropout': DropoutEstimator,
+        'fp_random_forest': FPRandomForestEstimator,
+        'fp_gaussian': FPGaussianProcessEstimator
     }[confidence_method]
 
 
@@ -153,6 +154,39 @@ class GaussianProcessEstimator(DroppingEstimator):
         return predictions, self._scale_confidence(confidence)
 
 
+class FPGaussianProcessEstimator(ConfidenceEstimator):
+    def _compute_confidence(self, test_predictions):
+        train_smiles = self.train_data.smiles()
+        test_smiles = self.test_data.smiles()
+
+        scaled_train_targets = self.scaler.transform(
+            np.array(self.train_data.targets()))
+
+        train_fps = np.array([morgan_fingerprint(s) for s in train_smiles])
+        test_fps = np.array([morgan_fingerprint(s) for s in test_smiles])
+
+        predictions = np.ndarray(
+            shape=(len(self.test_data.smiles()), self.args.num_tasks))
+        confidence = np.ndarray(
+            shape=(len(self.test_data.smiles()), self.args.num_tasks))
+
+        for task in range(self.args.num_tasks):
+            kernel = GPy.kern.Linear(input_dim=train_fps.shape[1])
+            gaussian = GPy.models.SparseGPRegression(
+                train_fps,
+                scaled_train_targets[:, task:task + 1], kernel)
+            gaussian.optimize()
+
+            test_preds, test_var = gaussian.predict(
+                test_fps)
+
+            predictions[:, task:task + 1] = test_preds
+            confidence[:, task:task + 1] = np.sqrt(test_var)
+
+        predictions = self.scaler.inverse_transform(predictions)
+        return predictions, self._scale_confidence(confidence)
+
+
 class RandomForestEstimator(DroppingEstimator):
     def _compute_confidence(self, test_predictions):
         _, avg_last_hidden_val, avg_last_hidden_test = self._compute_hidden_vals()
@@ -173,9 +207,40 @@ class RandomForestEstimator(DroppingEstimator):
             avg_test_preds = forest.predict(avg_last_hidden_test)
             predictions[:, task] = avg_test_preds
 
-            avg_test_var = fci.random_forest_error(
-                forest, avg_last_hidden_val, avg_last_hidden_test)
-            confidence[:, task] = np.sqrt(avg_test_var)
+            individual_predictions = np.array([estimator.predict(avg_last_hidden_test) for estimator in forest.estimators_])
+            confidence[:, task] = np.std(individual_predictions, axis=0)
+
+        predictions = self.scaler.inverse_transform(predictions)
+
+        return predictions,  self._scale_confidence(confidence)
+
+
+class FPRandomForestEstimator(ConfidenceEstimator):
+    def _compute_confidence(self, test_predictions):
+        train_smiles = self.train_data.smiles()
+        test_smiles = self.test_data.smiles()
+
+        scaled_train_targets = self.scaler.transform(
+            np.array(self.train_data.targets()))
+
+        train_fps = np.array([morgan_fingerprint(s) for s in train_smiles])
+        test_fps = np.array([morgan_fingerprint(s) for s in test_smiles])
+
+        predictions = np.ndarray(
+            shape=(len(self.test_data.smiles()), self.args.num_tasks))
+        confidence = np.ndarray(
+            shape=(len(self.test_data.smiles()), self.args.num_tasks))
+
+        n_trees = 128
+        for task in range(self.args.num_tasks):
+            forest = RandomForestRegressor(n_estimators=n_trees)
+            forest.fit(train_fps, scaled_train_targets[:, task])
+
+            test_preds = forest.predict(test_fps)
+            predictions[:, task] = test_preds
+            
+            individual_predictions = np.array([estimator.predict(test_fps) for estimator in forest.estimators_])
+            confidence[:, task] = np.std(individual_predictions, axis=0)
 
         predictions = self.scaler.inverse_transform(predictions)
 
@@ -249,7 +314,7 @@ class TanimotoEstimator(ConfidenceEstimator):
         train_smiles_sfp = [morgan_fingerprint(s) for s in train_smiles]
         for i in range(len(test_smiles)):
             confidence[i, :] = np.ones((self.args.num_tasks)) * tanimoto(
-                test_smiles[i], train_smiles_sfp, lambda x: sum(heapq.nlargest(5, x))/5) * (-1)
+                test_smiles[i], train_smiles_sfp, lambda x: 1 - sum(heapq.nlargest(8, x))/8)
 
         return test_predictions, confidence
 
@@ -280,10 +345,10 @@ def morgan_fingerprint(smiles: str, radius: int = 3, num_bits: int = 2048,
         mol = smiles
     if use_counts:
         fp_vect = AllChem.GetHashedMorganFingerprint(
-            mol, radius, nBits=num_bits)
+            mol, radius, nBits=num_bits, useChirality=True)
     else:
         fp_vect = AllChem.GetMorganFingerprintAsBitVect(
-            mol, radius, nBits=num_bits)
+            mol, radius, nBits=num_bits, useChirality=True)
     fp = np.zeros((1,))
     DataStructs.ConvertToNumpyArray(fp_vect, fp)
 
