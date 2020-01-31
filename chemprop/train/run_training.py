@@ -328,9 +328,10 @@ def run_training(args: Namespace, logger: Logger = None) -> List[float]:
         val_targets = np.array(val_targets)
         test_targets = np.array(test_targets)
 
-
-        val_predictions, val_confidence = confidence_estimator.compute_confidence(avg_val_preds)
-        test_predictions, test_confidence = confidence_estimator.compute_confidence(avg_test_preds)
+        (val_predictions,
+         val_confidence,
+         test_predictions,
+         test_confidence) = confidence_estimator.compute_confidence(avg_val_preds, avg_test_preds)
 
         ConfidenceEvaluator.save(val_predictions,
                                  val_targets,
