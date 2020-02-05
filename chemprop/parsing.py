@@ -167,7 +167,7 @@ def add_train_args(parser: ArgumentParser):
 
     # Confidence Arguments
     parser.add_argument('--confidence', type=str,
-                        choices=[None, 'gaussian', 'random_forest', 'ensemble', 'tanimoto', 'conformal', 'probability', 'conformal', 'nn', 'boost', 'latent_space', 'bootstrap', 'snapshot', 'dropout'], default=None,
+                        choices=[None, 'gaussian', 'random_forest', 'ensemble', 'tanimoto', 'conformal', 'probability', 'conformal', 'nn', 'boost', 'latent_space', 'bootstrap', 'snapshot', 'dropout', 'fp_random_forest', 'fp_gaussian'], default=None,
                         help='Measure confidence values for the prediction.')
     parser.add_argument('--calibrate_confidence', action='store_true', default=False, help='Calibrate confidence by test data.')
     parser.add_argument('--save_confidence', type=str, default=None,
