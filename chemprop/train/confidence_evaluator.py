@@ -4,7 +4,6 @@ import json
 import numpy as np
 import matplotlib.pyplot as plt
 import seaborn as sns
-import random
 from scipy import stats
 from scipy.optimize import minimize
 
@@ -150,11 +149,12 @@ class LogLikelihood(EvaluationMethod):
         optimal_log_likelihood = 0
         for set_ in data['sets_by_confidence']:
             # Encourage small standard deviations.
-            log_likelihood -= np.log(2 * np.pi * max(0.01, set_['confidence']**2)) / 2
-            optimal_log_likelihood -= np.log(2 * np.pi * max(0.01, set_['error']**2)) / 2
+            log_likelihood -= np.log(2 * np.pi * max(0.00001, set_['confidence']**2)) / 2
+            optimal_log_likelihood -= np.log(2 * np.pi * set_['error']**2) / 2
+
             # Penalize for large error.
-            log_likelihood -= set_['error']**2/(2 * max(0.01, set_['confidence']**2))
-            optimal_log_likelihood -= set_['error']**2/(2 * max(0.01, set_['error']**2))
+            log_likelihood -= set_['error']**2/(2 * max(0.00001, set_['confidence']**2))
+            optimal_log_likelihood -= 1 / 2 # set_['error']**2/(2 * set_['error']**2)
 
         return {'log_likelihood': log_likelihood,
                 'optimal_log_likelihood': optimal_log_likelihood}
@@ -359,7 +359,7 @@ class ConfidenceEvaluator:
         calibration_coefficients = {}
         for task in val_log:
             # Sample from validation data.
-            sampled_data = random.sample(val_log[task]['sets_by_error'], 30)
+            sampled_data = val_log[task]['sets_by_error']
 
             # Calibrate based on sampled data.
             confidence = np.array([set_['confidence'] for set_ in sampled_data])

@@ -153,7 +153,7 @@ def load_task_names(path: str) -> List[str]:
 
 
 def negative_log_likelihood(pred_targets, pred_var, targets):
-    clamped_var = torch.clamp(pred_var, min=0.001)
+    clamped_var = torch.clamp(pred_var, min=0.00001)
     return torch.log(clamped_var) / 2 + (pred_targets - targets)**2 / (2 * clamped_var)
 
 
