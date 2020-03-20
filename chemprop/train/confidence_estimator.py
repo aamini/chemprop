@@ -409,11 +409,11 @@ class TanimotoEstimator(ConfidenceEstimator):
 
         for i in range(len(val_smiles)):
             val_confidence[i, :] = np.ones((self.args.num_tasks)) * tanimoto(
-                val_smiles[i], train_smiles_sfp, lambda x: 1 - sum(heapq.nlargest(8, x))/8)
+                val_smiles[i], train_smiles_sfp, lambda x: sum(heapq.nsmallest(8, x))/8)
 
         for i in range(len(test_smiles)):
             test_confidence[i, :] = np.ones((self.args.num_tasks)) * tanimoto(
-                test_smiles[i], train_smiles_sfp, lambda x: 1 - sum(heapq.nlargest(8, x))/8)
+                test_smiles[i], train_smiles_sfp, lambda x: sum(heapq.nsmallest(8, x))/8)
 
         return val_predictions, val_confidence, test_predictions, test_confidence
 
@@ -457,155 +457,11 @@ def morgan_fingerprint(smiles: str, radius: int = 3, num_bits: int = 2048,
 def tanimoto(smile, train_smiles_sfp, operation):
     smiles = Chem.MolToSmiles(Chem.MolFromSmiles(smile))
     fp = morgan_fingerprint(smiles)
-    morgan_sim = []
+    tanimoto_distance = []
 
     for sfp in train_smiles_sfp:
         tsim = np.dot(fp, sfp) / (fp.sum() +
                                   sfp.sum() - np.dot(fp, sfp))
-        morgan_sim.append(tsim)
+        tanimoto_distance.append(-np.log2(max(0.0001, tsim)))
 
-    return operation(morgan_sim)
-
-
-# CLASSIFICATION METHODS
-# if args.confidence and args.dataset_type == 'classification':
-#     if args.confidence == 'gaussian':
-#         predictions = np.ndarray(
-#             shape=(len(test_smiles), args.num_tasks))
-#         confidence = np.ndarray(
-#             shape=(len(test_smiles), args.num_tasks))
-#
-#         val_targets = np.array(val_data.targets())
-#
-#         for task in range(args.num_tasks):
-#             kernel = GPy.kern.Linear(input_dim=args.last_hidden_size)
-#
-#             mask = val_targets[:, task] != None
-#             gaussian = GPy.models.GPClassification(
-#                 avg_last_hidden[mask, :], val_targets[mask, task:task+1], kernel)
-#             gaussian.optimize()
-#
-#             avg_test_preds, _ = gaussian.predict(
-#                 avg_last_hidden_test)
-#
-#             predictions[:, task:task+1] = avg_test_preds
-#             confidence[:, task:task+1] = np.maximum(avg_test_preds, 1 - avg_test_preds)
-#     elif args.confidence == 'probability':
-#         predictions = avg_test_preds
-#         confidence = np.maximum(avg_test_preds, 1 - avg_test_preds)
-#     elif args.confidence == 'random_forest':
-#         predictions = np.ndarray(
-#             shape=(len(test_smiles), args.num_tasks))
-#         confidence = np.ndarray(
-#             shape=(len(test_smiles), args.num_tasks))
-#
-#         val_targets = np.array(val_data.targets())
-#
-#         n_trees = 100
-#         for task in range(args.num_tasks):
-#             forest = RandomForestClassifier(n_estimators=n_trees)
-#
-#             mask = val_targets[:, task] != None
-#             forest.fit(avg_last_hidden[mask, :], val_targets[mask, task])
-#
-#             avg_test_preds = forest.predict(avg_last_hidden_test)
-#             predictions[:, task] = avg_test_preds
-#
-#             avg_test_var = fci.random_forest_error(
-#                 forest, avg_last_hidden[mask, :], avg_last_hidden_test) * (-1)
-#             confidence[:, task] = avg_test_var
-#     elif args.confidence == 'conformal':
-#         predictions = avg_test_preds
-#         confidence = np.ndarray(
-#             shape=(len(test_smiles), args.num_tasks))
-#
-#         val_targets = np.array(val_data.targets())
-#         for task in range(args.num_tasks):
-#             non_conformity = np.ndarray(shape=(len(val_targets)))
-#
-#             for i in range(len(val_targets)):
-#                 non_conformity[i] = kNN(avg_last_hidden[i, :], val_targets[i, task], avg_last_hidden, val_targets[:, task])
-#
-#             for i in range(len(test_smiles)):
-#                 alpha = kNN(avg_last_hidden_test[i, :], round(predictions[i, task]), avg_last_hidden, val_targets[:, task])
-#
-#                 if alpha == None:
-#                     confidence[i, task] = 0
-#                     continue
-#
-#                 non_null = non_conformity[non_conformity != None]
-#                 confidence[i, task] = np.sum(non_null >= alpha) / len(non_null)
-#     elif args.confidence == 'boost':
-#         # Calculate Tanimoto Distances
-#         val_smiles = val_data.smiles()
-#         val_max_tanimotos = np.ndarray(shape=(len(val_smiles), 1))
-#         val_avg_tanimotos = np.ndarray(shape=(len(val_smiles), 1))
-#         val_new_substructs = np.ndarray(shape=(len(val_smiles), 1))
-#         test_max_tanimotos = np.ndarray(shape=(len(test_smiles), 1))
-#         test_avg_tanimotos = np.ndarray(shape=(len(test_smiles), 1))
-#         test_new_substructs = np.ndarray(shape=(len(test_smiles), 1))
-#
-#         train_smiles_sfp = [morgan_fingerprint(s) for s in train_data.smiles()]
-#         train_smiles_union = [1 if 1 in [train_smiles_sfp[i][j] for i in range(len(train_smiles_sfp))] else 0 for j in range(len(train_smiles_sfp[0]))]
-#         for i in range(len(val_smiles)):
-#             temp_tanimotos = tanimoto(val_smiles[i], train_smiles_sfp, lambda x: x)
-#             val_max_tanimotos[i, 0] = max(temp_tanimotos)
-#             val_avg_tanimotos[i, 0] = sum(temp_tanimotos)/len(temp_tanimotos)
-#
-#             smiles = Chem.MolToSmiles(Chem.MolFromSmiles(val_smiles[i]))
-#             fp = morgan_fingerprint(smiles)
-#             val_new_substructs[i, 0] = sum([1 if fp[i] and not train_smiles_union[i] else 0 for i in range(len(fp))])
-#         for i in range(len(test_smiles)):
-#             temp_tanimotos = tanimoto(test_smiles[i], train_smiles_sfp, lambda x: x)
-#             test_max_tanimotos[i, 0] = max(temp_tanimotos)
-#             test_avg_tanimotos[i, 0] = sum(temp_tanimotos)/len(temp_tanimotos)
-#
-#             smiles = Chem.MolToSmiles(Chem.MolFromSmiles(test_smiles[i]))
-#             fp = morgan_fingerprint(smiles)
-#             test_new_substructs[i, 0] = sum([1 if fp[i] and not train_smiles_union[i] else 0 for i in range(len(fp))])
-#
-#         model.use_last_hidden = True
-#         original_preds = predict(
-#             model=model,
-#             data=val_data,
-#             batch_size=args.batch_size,
-#             scaler=None
-#         )
-#         # Create and Train New Model
-#         features = (original_preds, val_max_tanimotos, val_avg_tanimotos, val_new_substructs)
-#         new_model = train_residual_model(np.concatenate(features, axis=1),
-#                                          original_preds,
-#                                          val_data.targets(),
-#                                          args.epochs)
-#
-#         features = (avg_test_preds, test_max_tanimotos, test_avg_tanimotos, test_new_substructs)
-#         # confidence = new_model(np.concatenate(features, axis=1),
-#                                 # avg_test_preds).detach().numpy()
-#         predictions = avg_test_preds
-#         confidence = np.abs(avg_test_preds - 0.5)
-#         # print(targets)
-#         # targets = np.extract(correctness > avg_correctness, targets).reshape((-1, args.num_tasks))
-#         # print(targets)
-#         # targets = (np.abs(avg_test_preds - targets) < 0.5) * 1
-
-# def kNN(x, y, values, targets):
-#     if y == None:
-#         return None
-                  
-#     same_class_distances = []
-#     other_class_distances = []
-#     for i in range(len(values)):
-#         if np.all(x == values[i]) or targets[i] == None:
-#             continue
-        
-#         distance = np.linalg.norm(x - values[i, :])
-#         if y == targets[i]:
-#             same_class_distances.append(distance)
-#         else:
-#             other_class_distances.append(distance)
-    
-#     if len(other_class_distances) == 0 or len(same_class_distances) == 0:
-#         return None
-
-#     size = min([10, len(same_class_distances), len(other_class_distances)])
-#     return np.sum(heapq.nsmallest(size, same_class_distances)) / np.sum(heapq.nsmallest(size, other_class_distances))
+    return operation(tanimoto_distance)

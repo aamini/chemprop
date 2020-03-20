@@ -157,7 +157,9 @@ class LogLikelihood(EvaluationMethod):
             optimal_log_likelihood -= 1 / 2 # set_['error']**2/(2 * set_['error']**2)
 
         return {'log_likelihood': log_likelihood,
-                'optimal_log_likelihood': optimal_log_likelihood}
+                'optimal_log_likelihood': optimal_log_likelihood,
+                'average_log_likelihood': log_likelihood / len(data['sets_by_confidence']),
+                'average_optimal_log_likelihood': optimal_log_likelihood / len(data['sets_by_confidence'])}
 
     def _visualize(self, task, evaluation):
         print(task, '-', 'Sum of Log Likelihoods:', evaluation['log_likelihood'])
