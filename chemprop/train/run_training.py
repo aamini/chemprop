@@ -239,9 +239,6 @@ def run_training(args: Namespace, logger: Logger = None) -> List[float]:
             logger=logger
         )
 
-        if len(test_preds) != 0:
-            sum_test_preds += np.array(test_preds)
-
         # Average test score
         avg_test_score = np.nanmean(test_scores)
         info(f'Model {model_idx} test {args.metric} = {avg_test_score:.6f}')
@@ -252,6 +249,9 @@ def run_training(args: Namespace, logger: Logger = None) -> List[float]:
             for task_name, test_score in zip(args.task_names, test_scores):
                 info(f'Model {model_idx} test {task_name} {args.metric} = {test_score:.6f}')
                 writer.add_scalar(f'test_{task_name}_{args.metric}', test_score, n_iter)
+
+        if len(test_preds) != 0:
+            sum_test_preds += np.array(test_preds)
 
     # Evaluate ensemble on test set
     avg_test_preds = (sum_test_preds / args.ensemble_size).tolist()

@@ -185,6 +185,9 @@ def compute_similarities_and_targets(mol_vecs: torch.FloatTensor,  # num_mols x 
     sims = torch.cat(sims, dim=0)
     targets = torch.FloatTensor(targets)
 
+    if sims.is_cuda:
+        targets = targets.cuda()
+
     if sigmoid:
         sims = torch.sigmoid(sims)
 
