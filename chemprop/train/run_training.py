@@ -197,6 +197,7 @@ def run_training(args: Namespace, logger: Logger = None) -> List[float]:
                 metric_func=metric_func,
                 batch_size=args.batch_size,
                 dataset_type=args.dataset_type,
+                similarity_network=args.similarity_network,
                 scaler=scaler,
                 logger=logger
             )
@@ -234,6 +235,7 @@ def run_training(args: Namespace, logger: Logger = None) -> List[float]:
             num_tasks=args.num_tasks,
             metric_func=metric_func,
             dataset_type=args.dataset_type,
+            similarity_network=args.similarity_network,
             logger=logger
         )
 
@@ -260,6 +262,7 @@ def run_training(args: Namespace, logger: Logger = None) -> List[float]:
         num_tasks=args.num_tasks,
         metric_func=metric_func,
         dataset_type=args.dataset_type,
+        similarity_network=args.similarity_network,
         logger=logger
     )
 

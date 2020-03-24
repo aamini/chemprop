@@ -10,7 +10,7 @@ from torch.optim.lr_scheduler import _LRScheduler
 from tqdm import trange
 
 from chemprop.data import MoleculeDataset
-from chemprop.nn_utils import compute_gnorm, compute_pnorm, NoamLR
+from chemprop.nn_utils import compute_gnorm, compute_pnorm, compute_similarities_and_targets, NoamLR
 
 
 def train(model: nn.Module,
@@ -73,7 +73,17 @@ def train(model: nn.Module,
         if args.dataset_type == 'multiclass':
             targets = targets.long()
             loss = torch.cat([loss_func(preds[:, target_index, :], targets[:, target_index]).unsqueeze(1) for target_index in range(preds.size(1))], dim=1) * class_weights * mask
+        elif args.similarity_network:
+            preds, targets = compute_similarities_and_targets(preds, targets)
+            loss = loss_func(preds, targets)
         else:
+            if args.similarity_network:
+                preds, targets = compute_similarities_and_targets(preds, targets)
+
+                class_weights, mask = torch.ones(targets.shape), torch.ones(targets.shape)
+                if args.cuda:
+                    class_weights, mask = mask.cuda(), class_weights.cuda()
+
             loss = loss_func(preds, targets) * class_weights * mask
         loss = loss.sum() / mask.sum()
 

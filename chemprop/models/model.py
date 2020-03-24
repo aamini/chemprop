@@ -9,21 +9,30 @@ from chemprop.nn_utils import get_activation_function, initialize_weights
 class MoleculeModel(nn.Module):
     """A MoleculeModel is a model which contains a message passing network following by feed-forward layers."""
 
-    def __init__(self, classification: bool, multiclass: bool):
+    def __init__(self, featurizer: bool, classification: bool, multiclass: bool):
         """
         Initializes the MoleculeModel.
 
+        :param featurizer: Whether the model is a featurizer (i.e. no last layer).
         :param classification: Whether the model is a classification model.
+        :param multiclass: Whether the model is a multiclass classification model.
         """
         super(MoleculeModel, self).__init__()
 
+        assert not (classification and multiclass)
+
+        self.featurizer = featurizer
         self.classification = classification
+        self.multiclass = multiclass
+
+        if self.featurizer:
+            return
+
         if self.classification:
             self.sigmoid = nn.Sigmoid()
-        self.multiclass = multiclass
+
         if self.multiclass:
             self.multiclass_softmax = nn.Softmax(dim=2)
-        assert not (self.classification and self.multiclass)
 
     def create_encoder(self, args: Namespace):
         """
@@ -39,7 +48,6 @@ class MoleculeModel(nn.Module):
 
         :param args: Arguments.
         """
-        self.multiclass = args.dataset_type == 'multiclass'
         if self.multiclass:
             self.num_classes = args.multiclass_num_classes
         if args.features_only:
@@ -69,11 +77,13 @@ class MoleculeModel(nn.Module):
                     dropout,
                     nn.Linear(args.ffn_hidden_size, args.ffn_hidden_size),
                 ])
-            ffn.extend([
-                activation,
-                dropout,
-                nn.Linear(args.ffn_hidden_size, args.output_size),
-            ])
+
+            if not self.featurizer:
+                ffn.extend([
+                    activation,
+                    dropout,
+                    nn.Linear(args.ffn_hidden_size, args.output_size),
+                ])
 
         # Create FFN model
         self.ffn = nn.Sequential(*ffn)
@@ -87,13 +97,17 @@ class MoleculeModel(nn.Module):
         """
         output = self.ffn(self.encoder(*input))
 
+        if self.featurizer:
+            return output
+
         # Don't apply sigmoid during training b/c using BCEWithLogitsLoss
         if self.classification and not self.training:
             output = self.sigmoid(output)
+
         if self.multiclass:
-            output = output.reshape((output.size(0), -1, self.num_classes)) # batch size x num targets x num classes per target
+            output = output.reshape((output.size(0), -1, self.num_classes))  # batch size x num targets x num classes per target
             if not self.training:
-                output = self.multiclass_softmax(output) # to get probabilities during evaluation, but not during training as we're using CrossEntropyLoss
+                output = self.multiclass_softmax(output)  # to get probabilities during evaluation, but not during training as we're using CrossEntropyLoss
 
         return output
 
@@ -110,7 +124,11 @@ def build_model(args: Namespace) -> nn.Module:
     if args.dataset_type == 'multiclass':
         args.output_size *= args.multiclass_num_classes
 
-    model = MoleculeModel(classification=args.dataset_type == 'classification', multiclass=args.dataset_type == 'multiclass')
+    model = MoleculeModel(
+        featurizer=args.similarity_network,
+        classification=args.dataset_type == 'classification',
+        multiclass=args.dataset_type == 'multiclass'
+    )
     model.create_encoder(args)
     model.create_ffn(args)
 

@@ -1,9 +1,12 @@
+from itertools import cycle
 import math
-from typing import List, Union
+from random import Random
+from typing import List, Tuple, Union
 
 import numpy as np
 import torch
 import torch.nn as nn
+import torch.nn.functional as F
 from torch.optim import Optimizer
 from torch.optim.lr_scheduler import _LRScheduler
 from tqdm import trange
@@ -128,6 +131,66 @@ def compute_molecule_vectors(model: nn.Module, data: MoleculeDataset, batch_size
         vecs.extend(batch_vecs)
 
     return vecs
+
+
+def compute_similarities_and_targets(mol_vecs: torch.FloatTensor,  # num_mols x hidden_size
+                                     targets: torch.LongTensor,  # num_mols x 1
+                                     sigmoid: bool = False) -> Tuple[torch.FloatTensor, torch.FloatTensor]:
+    """
+    Computes the similarity between pairs of molecules and creates targets based on their labels
+
+    Given binary classification data, samples positive/positive pairs, negative/negative pairs,
+    and positive/negative pairs; computes the similarity between the pairs; and
+    creates targets based on whether the molecules in the pair have the same (1) or different (0) labels.
+
+    Uses cosine similarity.
+
+    :param mol_vecs: A FloatTensor (num_mols x hidden_size) containing molecule embeddings.
+    :param targets: A LongTensor (num_mols x 1) containing binary molecule labels.
+    :param sigmoid: Whether to apply sigmoid to the similarity predictions.
+    :return: A tuple containing the similarity predictions (num_mols x 1) and the similarity labels (num_mols x 1).
+    """
+    assert targets.shape[1] == 1  # only works for single task
+    targets = targets.squeeze(dim=1)
+
+    pos, neg = mol_vecs[targets == 1], mol_vecs[targets == 0]
+    pos_len, neg_len = pos.shape[0], neg.shape[0]
+    tot_len = pos_len + neg_len
+    sims, targets = [], []
+    random = Random(0)
+
+    if pos_len > 1:
+        indices = list(range(pos_len))
+        random.shuffle(indices)
+        pos_sims = F.cosine_similarity(pos, pos[indices])
+        sims.append(pos_sims)
+        targets += [1] * pos_len
+
+    if neg_len > 1:
+        indices = list(range(neg_len))
+        random.shuffle(indices)
+        neg_sims = F.cosine_similarity(neg, neg[indices])
+        sims.append(neg_sims)
+        targets += [1] * neg_len
+
+    if pos_len > 0 and neg_len > 0:
+        pos_indices, neg_indices = list(range(pos_len)) * (tot_len // pos_len + 1), list(range(neg_len)) * (tot_len // neg_len + 1)
+        random.shuffle(pos_indices)
+        random.shuffle(neg_indices)
+        pos_indices, neg_indices = pos_indices[:tot_len], neg_indices[:tot_len]
+        pos_neg_sims = F.cosine_similarity(pos[pos_indices], neg[neg_indices])
+        sims.append(pos_neg_sims)
+        targets += [0] * tot_len
+
+    sims = torch.cat(sims, dim=0)
+    targets = torch.FloatTensor(targets)
+
+    if sigmoid:
+        sims = torch.sigmoid(sims)
+
+    sims, targets = sims.unsqueeze(dim=1), targets.unsqueeze(dim=1)
+
+    return sims, targets
 
 
 class NoamLR(_LRScheduler):

@@ -175,6 +175,9 @@ def add_train_args(parser: ArgumentParser):
                         help='Number of layers in FFN after MPN encoding')
     parser.add_argument('--atom_messages', action='store_true', default=False,
                         help='Use messages on atoms instead of messages on bonds')
+    parser.add_argument('--similarity_network', action='store_true', default=False,
+                        help='Whether to train a similarity network which predicts'
+                             'whether two molecules have the same label')
 
 
 def update_checkpoint_args(args: Namespace):
@@ -305,6 +308,9 @@ def modify_train_args(args: Namespace):
 
     if args.test:
         args.epochs = 0
+
+    if args.similarity_network:
+        assert args.dataset_type == 'classification'
 
 
 def parse_train_args() -> Namespace:
