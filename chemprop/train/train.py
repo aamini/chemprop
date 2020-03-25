@@ -9,7 +9,7 @@ from torch.optim import Optimizer
 from torch.optim.lr_scheduler import _LRScheduler
 from tqdm import trange
 
-from chemprop.data import MoleculeDataset
+from chemprop.data import MoleculeDataset, propagate_labels
 from chemprop.nn_utils import compute_gnorm, compute_pnorm, NoamLR
 
 
@@ -21,7 +21,8 @@ def train(model: nn.Module,
           args: Namespace,
           n_iter: int = 0,
           logger: logging.Logger = None,
-          writer: SummaryWriter = None) -> int:
+          writer: SummaryWriter = None,
+          transductive_data = None) -> int:
     """
     Trains a model for an epoch.
 
@@ -71,7 +72,14 @@ def train(model: nn.Module,
             pos_index += len(new_pos)
             neg_index += len(new_neg)
 
-        data = new_data
+        data = MoleculeDataset(new_data)
+    
+    if transductive_data is not None:
+        model.eval()
+        data, weights = propagate_labels(model, data, transductive_data, args)
+        model.train()
+    else:
+        weights = torch.ones(len(data))
 
     num_iters = len(data) // args.batch_size * args.batch_size  # don't use the last batch if it's small, for stability
 
@@ -79,19 +87,16 @@ def train(model: nn.Module,
         # Prepare batch
         if i + args.batch_size > len(data):
             break
-        mol_batch = MoleculeDataset(data[i:i + args.batch_size])
+        mol_batch = MoleculeDataset(data.data[i:i + args.batch_size])
         smiles_batch, features_batch, target_batch = mol_batch.smiles(), mol_batch.features(), mol_batch.targets()
+        weights_batch = weights[i:i + args.batch_size]
         batch = smiles_batch
         mask = torch.Tensor([[x is not None for x in tb] for tb in target_batch])
         targets = torch.Tensor([[0 if x is None else x for x in tb] for tb in target_batch])
 
         if next(model.parameters()).is_cuda:
             mask, targets = mask.cuda(), targets.cuda()
-
-        class_weights = torch.ones(targets.shape)
-
-        if args.cuda:
-            class_weights = class_weights.cuda()
+            weights_batch = weights_batch.cuda()            
 
         # Run model
         model.zero_grad()
@@ -99,9 +104,9 @@ def train(model: nn.Module,
 
         if args.dataset_type == 'multiclass':
             targets = targets.long()
-            loss = torch.cat([loss_func(preds[:, target_index, :], targets[:, target_index]).unsqueeze(1) for target_index in range(preds.size(1))], dim=1) * class_weights * mask
+            loss = torch.cat([loss_func(preds[:, target_index, :], targets[:, target_index]).unsqueeze(1) for target_index in range(preds.size(1))], dim=1) * mask
         else:
-            loss = loss_func(preds, targets) * class_weights * mask
+            loss = loss_func(preds, targets) * weights_batch * mask
         loss = loss.sum() / mask.sum()
 
         loss_sum += loss.item()

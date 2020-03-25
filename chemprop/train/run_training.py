@@ -186,7 +186,8 @@ def run_training(args: Namespace, logger: Logger = None) -> List[float]:
                 args=args,
                 n_iter=n_iter,
                 logger=logger,
-                writer=writer
+                writer=writer,
+                transductive_data=test_data if args.label_prop and epoch >= args.label_prop_start_epoch else None
             )
             if isinstance(scheduler, ExponentialLR):
                 scheduler.step()

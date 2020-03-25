@@ -177,6 +177,14 @@ def add_train_args(parser: ArgumentParser):
                         help='Number of layers in FFN after MPN encoding')
     parser.add_argument('--atom_messages', action='store_true', default=False,
                         help='Use messages on atoms instead of messages on bonds')
+    parser.add_argument('--label_prop', action='store_true', default=False,
+                        help='Do label prop transductively on test set')
+    parser.add_argument('--label_prop_start_epoch', type=int, default=10,
+                        help='How many epochs to wait before starting label propagation, if doing label prop given')
+    parser.add_argument('--label_prop_alpha', type=float, default=0.99,
+                        help='alpha for label propagation')
+    parser.add_argument('--adjacency_method', type=str, default='embedding', choices=['embedding', 'tanimoto'],
+                        help='method for calculating adjacency matrix for label prop')
 
 
 def update_checkpoint_args(args: Namespace):
