@@ -1,4 +1,4 @@
-from itertools import cycle
+from argparse import Namespace
 import math
 from random import Random
 from typing import List, Tuple, Union
@@ -135,6 +135,7 @@ def compute_molecule_vectors(model: nn.Module, data: MoleculeDataset, batch_size
 
 def compute_similarities_and_targets(mol_vecs: torch.FloatTensor,  # num_mols x hidden_size
                                      targets: torch.LongTensor,  # num_mols x 1
+                                     args: Namespace,
                                      sigmoid: bool = False) -> Tuple[torch.FloatTensor, torch.FloatTensor]:
     """
     Computes the similarity between pairs of molecules and creates targets based on their labels
@@ -147,6 +148,7 @@ def compute_similarities_and_targets(mol_vecs: torch.FloatTensor,  # num_mols x 
 
     :param mol_vecs: A FloatTensor (num_mols x hidden_size) containing molecule embeddings.
     :param targets: A LongTensor (num_mols x 1) containing binary molecule labels.
+    :param args: Arguments.
     :param sigmoid: Whether to apply sigmoid to the similarity predictions.
     :return: A tuple containing the similarity predictions (num_mols x 1) and the similarity labels (num_mols x 1).
     """
@@ -159,17 +161,25 @@ def compute_similarities_and_targets(mol_vecs: torch.FloatTensor,  # num_mols x 
     sims, targets = [], []
     random = Random(0)
 
+    if args.featurizer:
+        # Cosine similarity between molecule features
+        sim_function = F.cosine_similarity
+    else:
+        # 1 - absolute_value(label_pred_for_mol_0, label_pred_for_mol_1)
+        def sim_function(x_0: torch.FloatTensor, x_1: torch.FloatTensor) -> torch.FloatTensor:
+            return 1 - torch.abs(x_1.squeeze(dim=1) - x_0.squeeze(dim=1))
+
     if pos_len > 1:
         indices = list(range(pos_len))
         random.shuffle(indices)
-        pos_sims = F.cosine_similarity(pos, pos[indices])
+        pos_sims = sim_function(pos, pos[indices])
         sims.append(pos_sims)
         targets += [1] * pos_len
 
     if neg_len > 1:
         indices = list(range(neg_len))
         random.shuffle(indices)
-        neg_sims = F.cosine_similarity(neg, neg[indices])
+        neg_sims = sim_function(neg, neg[indices])
         sims.append(neg_sims)
         targets += [1] * neg_len
 
@@ -178,7 +188,7 @@ def compute_similarities_and_targets(mol_vecs: torch.FloatTensor,  # num_mols x 
         random.shuffle(pos_indices)
         random.shuffle(neg_indices)
         pos_indices, neg_indices = pos_indices[:tot_len], neg_indices[:tot_len]
-        pos_neg_sims = F.cosine_similarity(pos[pos_indices], neg[neg_indices])
+        pos_neg_sims = sim_function(pos[pos_indices], neg[neg_indices])
         sims.append(pos_neg_sims)
         targets += [0] * tot_len
 
@@ -188,7 +198,7 @@ def compute_similarities_and_targets(mol_vecs: torch.FloatTensor,  # num_mols x 
     if sims.is_cuda:
         targets = targets.cuda()
 
-    if sigmoid:
+    if sigmoid and args.featurizer:
         sims = torch.sigmoid(sims)
 
     sims, targets = sims.unsqueeze(dim=1), targets.unsqueeze(dim=1)

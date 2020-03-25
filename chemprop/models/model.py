@@ -125,7 +125,7 @@ def build_model(args: Namespace) -> nn.Module:
         args.output_size *= args.multiclass_num_classes
 
     model = MoleculeModel(
-        featurizer=args.similarity_network,
+        featurizer=args.featurizer,
         classification=args.dataset_type == 'classification',
         multiclass=args.dataset_type == 'multiclass'
     )

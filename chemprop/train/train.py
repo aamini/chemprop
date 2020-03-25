@@ -73,12 +73,9 @@ def train(model: nn.Module,
         if args.dataset_type == 'multiclass':
             targets = targets.long()
             loss = torch.cat([loss_func(preds[:, target_index, :], targets[:, target_index]).unsqueeze(1) for target_index in range(preds.size(1))], dim=1) * class_weights * mask
-        elif args.similarity_network:
-            preds, targets = compute_similarities_and_targets(preds, targets)
-            loss = loss_func(preds, targets)
         else:
             if args.similarity_network:
-                preds, targets = compute_similarities_and_targets(preds, targets)
+                preds, targets = compute_similarities_and_targets(preds, targets, args)
 
                 class_weights, mask = torch.ones(targets.shape), torch.ones(targets.shape)
                 if args.cuda:

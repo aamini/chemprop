@@ -1,3 +1,4 @@
+from argparse import Namespace
 import logging
 from typing import Callable, List
 
@@ -14,7 +15,7 @@ def evaluate_predictions(preds: List[List[float]],
                          num_tasks: int,
                          metric_func: Callable,
                          dataset_type: str,
-                         similarity_network: bool = False,
+                         args: Namespace = None,
                          logger: logging.Logger = None) -> List[float]:
     """
     Evaluates predictions using a metric function and filtering out invalid targets.
@@ -24,7 +25,7 @@ def evaluate_predictions(preds: List[List[float]],
     :param num_tasks: Number of tasks.
     :param metric_func: Metric function which takes in a list of targets and a list of predictions.
     :param dataset_type: Dataset type.
-    :param similarity_network: Whether the model is a similarity network.
+    :param args: Arguments.
     :param logger: Logger.
     :return: A list with the score for each task based on `metric_func`.
     """
@@ -33,9 +34,9 @@ def evaluate_predictions(preds: List[List[float]],
     if len(preds) == 0:
         return [float('nan')] * num_tasks
 
-    if similarity_network:
+    if args is not None and args.similarity_network:
         preds, targets = torch.FloatTensor(preds), torch.LongTensor(targets)
-        preds, targets = compute_similarities_and_targets(preds, targets, sigmoid=True)
+        preds, targets = compute_similarities_and_targets(preds, targets, args, sigmoid=True)
 
     # Filter out empty targets
     # valid_preds and valid_targets have shape (num_tasks, data_size)
@@ -81,7 +82,7 @@ def evaluate(model: nn.Module,
              metric_func: Callable,
              batch_size: int,
              dataset_type: str,
-             similarity_network: bool = False,
+             args: Namespace = None,
              scaler: StandardScaler = None,
              logger: logging.Logger = None) -> List[float]:
     """
@@ -93,7 +94,7 @@ def evaluate(model: nn.Module,
     :param metric_func: Metric function which takes in a list of targets and a list of predictions.
     :param batch_size: Batch size.
     :param dataset_type: Dataset type.
-    :param similarity_network: Whether the model is a similarity network.
+    :param args: Arguments.
     :param scaler: A StandardScaler object fit on the training targets.
     :param logger: Logger.
     :return: A list with the score for each task based on `metric_func`.
@@ -114,7 +115,7 @@ def evaluate(model: nn.Module,
         metric_func=metric_func,
         dataset_type=dataset_type,
         logger=logger,
-        similarity_network=similarity_network
+        args=args
     )
 
     return results
