@@ -6,3 +6,5 @@
 *.pt
 *.json
 *.sqlite3
+*.txt
+!drug_info.txt
