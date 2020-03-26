@@ -10,7 +10,7 @@ from torch.optim.lr_scheduler import _LRScheduler
 from tqdm import trange
 
 from chemprop.data import MoleculeDataset, propagate_labels
-from chemprop.nn_utils import compute_gnorm, compute_pnorm, NoamLR
+from chemprop.nn_utils import compute_gnorm, compute_pnorm, compute_similarities_and_targets, NoamLR
 
 
 def train(model: nn.Module,
@@ -22,7 +22,7 @@ def train(model: nn.Module,
           n_iter: int = 0,
           logger: logging.Logger = None,
           writer: SummaryWriter = None,
-          transductive_data = None) -> int:
+          transductive_data: MoleculeDataset = None) -> int:
     """
     Trains a model for an epoch.
 
@@ -35,6 +35,7 @@ def train(model: nn.Module,
     :param n_iter: The number of iterations (training examples) trained on so far.
     :param logger: A logger for printing intermediate results.
     :param writer: A tensorboardX SummaryWriter.
+    :param transductive_data: Test data for transductive learning.
     :return: The total number of iterations (training examples) trained on so far.
     """
     debug = logger.debug if logger is not None else print
@@ -87,7 +88,7 @@ def train(model: nn.Module,
         # Prepare batch
         if i + args.batch_size > len(data):
             break
-        mol_batch = MoleculeDataset(data.data[i:i + args.batch_size])
+        mol_batch = MoleculeDataset(data[i:i + args.batch_size])
         smiles_batch, features_batch, target_batch = mol_batch.smiles(), mol_batch.features(), mol_batch.targets()
         weights_batch = weights[i:i + args.batch_size]
         batch = smiles_batch
@@ -106,6 +107,13 @@ def train(model: nn.Module,
             targets = targets.long()
             loss = torch.cat([loss_func(preds[:, target_index, :], targets[:, target_index]).unsqueeze(1) for target_index in range(preds.size(1))], dim=1) * mask
         else:
+            if args.similarity_network:
+                preds, targets = compute_similarities_and_targets(preds, targets, args)
+
+                class_weights, mask = torch.ones(targets.shape), torch.ones(targets.shape)
+                if args.cuda:
+                    class_weights, mask = mask.cuda(), class_weights.cuda()
+
             loss = loss_func(preds, targets) * weights_batch * mask
         loss = loss.sum() / mask.sum()
 

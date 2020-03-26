@@ -198,6 +198,7 @@ def run_training(args: Namespace, logger: Logger = None) -> List[float]:
                 metric_func=metric_func,
                 batch_size=args.batch_size,
                 dataset_type=args.dataset_type,
+                args=args,
                 scaler=scaler,
                 logger=logger
             )
@@ -235,11 +236,12 @@ def run_training(args: Namespace, logger: Logger = None) -> List[float]:
             num_tasks=args.num_tasks,
             metric_func=metric_func,
             dataset_type=args.dataset_type,
+            args=args,
             logger=logger
         )
 
-        if len(test_preds) != 0:
-            sum_test_preds += np.array(test_preds)
+        if args.similarity_network:
+            return test_scores
 
         # Average test score
         avg_test_score = np.nanmean(test_scores)
@@ -252,6 +254,9 @@ def run_training(args: Namespace, logger: Logger = None) -> List[float]:
                 info(f'Model {model_idx} test {task_name} {args.metric} = {test_score:.6f}')
                 writer.add_scalar(f'test_{task_name}_{args.metric}', test_score, n_iter)
 
+        if len(test_preds) != 0:
+            sum_test_preds += np.array(test_preds)
+
     # Evaluate ensemble on test set
     avg_test_preds = (sum_test_preds / args.ensemble_size).tolist()
 
@@ -261,6 +266,7 @@ def run_training(args: Namespace, logger: Logger = None) -> List[float]:
         num_tasks=args.num_tasks,
         metric_func=metric_func,
         dataset_type=args.dataset_type,
+        args=args,
         logger=logger
     )
 

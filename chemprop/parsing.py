@@ -185,6 +185,12 @@ def add_train_args(parser: ArgumentParser):
                         help='alpha for label propagation')
     parser.add_argument('--adjacency_method', type=str, default='embedding', choices=['embedding', 'tanimoto'],
                         help='method for calculating adjacency matrix for label prop')
+    parser.add_argument('--similarity_network', action='store_true', default=False,
+                        help='Whether to train a similarity network which predicts'
+                             'whether two molecules have the same label')
+    parser.add_argument('--featurizer', action='store_true', default=False,
+                        help='Whether to remove the last layer of the model'
+                             'to create a featurizer')
 
 
 def update_checkpoint_args(args: Namespace):
@@ -318,6 +324,12 @@ def modify_train_args(args: Namespace):
 
     if args.test:
         args.epochs = 0
+
+    if args.similarity_network:
+        assert args.dataset_type == 'classification'
+
+    if args.featurizer:
+        assert args.similarity_network
 
 
 def parse_train_args() -> Namespace:
