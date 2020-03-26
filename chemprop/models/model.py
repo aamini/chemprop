@@ -88,6 +88,18 @@ class MoleculeModel(nn.Module):
         # Create FFN model
         self.ffn = nn.Sequential(*ffn)
 
+    def featurize(self, *input):
+        """
+        Computes feature vectors of the input by leaving out the last layer.
+
+        :param input: Input.
+        :return: The feature vectors computed by the MoleculeModel.
+        """
+        fnn_without_last_layer = nn.Sequential(self.ffn[:-1])
+        features = fnn_without_last_layer(self.encoder(*input))
+
+        return features
+
     def forward(self, *input):
         """
         Runs the MoleculeModel on input.
