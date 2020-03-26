@@ -22,7 +22,8 @@ def train(model: nn.Module,
           n_iter: int = 0,
           logger: logging.Logger = None,
           writer: SummaryWriter = None,
-          transductive_data: MoleculeDataset = None) -> int:
+          transductive_data: MoleculeDataset = None,
+          label_prop_similarity_model: nn.Module = None) -> int:
     """
     Trains a model for an epoch.
 
@@ -36,6 +37,7 @@ def train(model: nn.Module,
     :param logger: A logger for printing intermediate results.
     :param writer: A tensorboardX SummaryWriter.
     :param transductive_data: Test data for transductive learning.
+    :param label_prop_similarity_model: Similarity model used in label propagation.
     :return: The total number of iterations (training examples) trained on so far.
     """
     debug = logger.debug if logger is not None else print
@@ -77,7 +79,12 @@ def train(model: nn.Module,
     
     if transductive_data is not None:
         model.eval()
-        data, weights = propagate_labels(model, data, transductive_data, args)
+        data, weights = propagate_labels(
+            model=model,
+            data=data,
+            transductive_data=transductive_data,
+            similarity_model=label_prop_similarity_model,
+            args=args)
         model.train()
     else:
         weights = torch.ones(len(data))

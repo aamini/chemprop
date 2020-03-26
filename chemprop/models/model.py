@@ -95,8 +95,11 @@ class MoleculeModel(nn.Module):
         :param input: Input.
         :return: The feature vectors computed by the MoleculeModel.
         """
-        fnn_without_last_layer = nn.Sequential(self.ffn[:-1])
-        features = fnn_without_last_layer(self.encoder(*input))
+        if self.featurizer:
+            features = self.ffn(self.encoder(*input))
+        else:
+            fnn_without_last_layer = nn.Sequential(self.ffn[:-1])
+            features = fnn_without_last_layer(self.encoder(*input))
 
         return features
 

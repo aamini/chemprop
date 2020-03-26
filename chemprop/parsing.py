@@ -185,6 +185,9 @@ def add_train_args(parser: ArgumentParser):
                         help='alpha for label propagation')
     parser.add_argument('--adjacency_method', type=str, default='embedding', choices=['embedding', 'tanimoto'],
                         help='method for calculating adjacency matrix for label prop')
+    parser.add_argument('--label_prop_similarity_checkpoint_path', type=str, default=None,
+                        help='Path to a .pt file for a model whose features will be'
+                             'used in label propagation to compute molecular similarity')
     parser.add_argument('--similarity_network', action='store_true', default=False,
                         help='Whether to train a similarity network which predicts'
                              'whether two molecules have the same label')
@@ -330,6 +333,9 @@ def modify_train_args(args: Namespace):
 
     if args.featurizer:
         assert args.similarity_network
+
+    if args.label_prop_similarity_checkpoint_path:
+        assert args.label_prop
 
 
 def parse_train_args() -> Namespace:

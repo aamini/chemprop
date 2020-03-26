@@ -1,4 +1,5 @@
 from argparse import Namespace
+from typing import Tuple
 
 import numpy as np
 from rdkit import Chem, DataStructs
@@ -14,7 +15,7 @@ from .data import MoleculeDataset
 def adjacency_matrix(data: MoleculeDataset,
                      model: MoleculeModel,
                      method: str,
-                     batch_size: int):
+                     batch_size: int) -> np.ndarray:
     matrix = np.zeros((len(data), len(data)))  # diagonal entries should be 0
 
     if method == 'embedding':
@@ -41,7 +42,8 @@ def adjacency_matrix(data: MoleculeDataset,
 def propagate_labels(model: MoleculeModel,
                      data: MoleculeDataset,
                      transductive_data: MoleculeDataset,
-                     args: Namespace):
+                     similarity_model: MoleculeModel,
+                     args: Namespace) -> Tuple[MoleculeDataset, torch.FloatTensor]:
     # copy probably unneeded; remove if we need speed
     # data = deepcopy(data)
     # transductive_data = deepcopy(transductive_data)
@@ -53,7 +55,12 @@ def propagate_labels(model: MoleculeModel,
     new_data = MoleculeDataset(data.data + transductive_data.data)
     labeled_data_size = len(data)
     data_size = len(new_data)
-    W = adjacency_matrix(new_data, model, args.adjacency_method, batch_size=args.batch_size)  # TODO add to parsing
+    W = adjacency_matrix(
+        data=new_data,
+        model=similarity_model,
+        method=args.adjacency_method,
+        batch_size=args.batch_size
+    )  # TODO add to parsing
     D_neghalf = np.diag(1 / np.sqrt(W.sum(axis=0)))  # D = numpy.diag(W.sum(axis=0))
     W_norm = np.matmul(np.matmul(D_neghalf, W), D_neghalf)
     Y = np.zeros((data_size, 2))  # should be 0 for all unlabeled
