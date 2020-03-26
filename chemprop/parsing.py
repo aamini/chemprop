@@ -3,6 +3,7 @@ import json
 import os
 from tempfile import TemporaryDirectory
 import pickle
+import sys
 
 import torch
 
@@ -336,6 +337,8 @@ def modify_train_args(args: Namespace):
 
     if args.label_prop_similarity_checkpoint_path:
         assert args.label_prop
+
+    args.command_line = f'python {" ".join(sys.argv)}'
 
 
 def parse_train_args() -> Namespace:
