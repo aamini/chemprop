@@ -44,13 +44,14 @@ def create_drugs(smiles_list: List[str],
     drug_ids = list(drug_ids_to_info.keys())
     for i in tqdm(range(0, len(drug_ids), chunk_size),
                   desc='Fetching Drug Targets'):
-        activities = chembl_client.activity.filter(
+        mechanisms = chembl_client.mechanism.filter(
             molecule_chembl_id__in=drug_ids[i:i+chunk_size]).only([
                     'target_chembl_id', 'molecule_chembl_id'])
 
-        for activity in tqdm(activities, desc='Processing Chunk', leave=False):
-            drug_ids_to_info[activity['molecule_chembl_id']]['targets'].add(
-                activity['target_chembl_id'])
+        for m in tqdm(mechanisms, desc='Processing Chunk', leave=False):
+            if m['target_chembl_id'] is not None:
+                drug_ids_to_info[m['molecule_chembl_id']]['targets'].add(
+                    m['target_chembl_id'])
 
     return drug_ids_to_info
 
