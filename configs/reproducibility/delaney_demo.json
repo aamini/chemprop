@@ -1,0 +1,19 @@
+{ 
+    "seeds" : [0, 1],
+    "n_ensembles" : 5, 
+    "ensemble_threads" : 1, 
+    "datasets" : ["delaney"],  
+    "dataset_types" : ["regression"], 
+    "dataset_splits": ["random"],
+    "methods" : ["ensemble", "dropout", "evidence_new_reg"],
+    "reg_coefs": [0, 0, 0.2],
+    "split_sizes" : [0.8, 0.1, 0.1], 
+    "save_dir" : "results/delaney_demo/",
+    "epochs" : 20,
+    "debug" : false, 
+    "use_gpu" : false, 
+    "job_name_prefix" : "regression_low_n", 
+    "experiment_name" : "regression_low_n", 
+    "use_slurm" : false,
+    "atomistic" : false
+}

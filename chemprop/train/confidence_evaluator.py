@@ -2,11 +2,16 @@ from argparse import Namespace
 from scipy import stats
 import json
 import numpy as np
-import matplotlib.pyplot as plt
+import os
 import seaborn as sns
 from scipy import stats
 from scipy.optimize import minimize
 
+import matplotlib
+matplotlib.use('Agg') # REMOVE THIS LINE IF TRYING TO INTERACTIVELY SHOW PLOTS  (IN ADDTION TO SAVING)
+import matplotlib.pyplot as plt
+
+from chemprop.data.utils import get_task_names
 
 class EvaluationMethod:
     def __init__(self):
@@ -15,12 +20,12 @@ class EvaluationMethod:
     def evaluate(self, data):
         pass
 
-    def visualize(self, task, data):
+    def visualize(self, task, data, logger=print, path="./", draw=True):
         evaluation = self.evaluate(data)
 
         sns.set()
 
-        self._visualize(task, evaluation)
+        self._visualize(task, evaluation, logger, path, draw)
 
 
 class Cutoffs(EvaluationMethod):
@@ -49,7 +54,7 @@ class Cutoffs(EvaluationMethod):
 
         return {'cutoff': cutoff, 'rmse': rmse, 'ideal_rmse': ideal_rmse}
 
-    def _visualize(self, task, evaluation):
+    def _visualize(self, task, evaluation, logger, path, draw):
         percentiles = np.linspace(0, 100, len(evaluation['rmse']))
 
         plt.plot(percentiles, evaluation['rmse'])
@@ -60,7 +65,11 @@ class Cutoffs(EvaluationMethod):
         plt.legend(['Confidence Discard', 'Ideal Discard'])
         plt.title(task)
 
-        plt.show()
+        plt.savefig(os.path.join(path, self.name+".pdf"))
+        if draw: plt.show()
+        plt.close()
+
+        print(evaluation, file=open(os.path.join(path, self.name+".txt"),"w"))
 
 
 class Scatter(EvaluationMethod):
@@ -87,7 +96,7 @@ class Scatter(EvaluationMethod):
     def _y_filter(self, y):
         return y
 
-    def _visualize(self, task, evaluation):
+    def _visualize(self, task, evaluation, logger, path, draw):
         plt.scatter(evaluation['confidence'], evaluation['error'], s=0.3)
         plt.plot(evaluation['confidence'], evaluation['best_fit_y'])
 
@@ -95,7 +104,11 @@ class Scatter(EvaluationMethod):
         plt.ylabel(self.y_axis_label)
         plt.title(task)
 
-        plt.show()
+        plt.savefig(os.path.join(path, self.name+".pdf"))
+        if draw: plt.show()
+        plt.close()
+
+        print(evaluation, file=open(os.path.join(path, self.name+".txt"),"w"))
 
 
 class AbsScatter(Scatter):
@@ -135,9 +148,10 @@ class Spearman(EvaluationMethod):
 
         return {'rho': rho, 'p': p}
 
-    def _visualize(self, task, evaluation):
-        print(task, '-', 'Spearman Rho:', evaluation['rho'])
-        print(task, '-', 'Spearman p-value:', evaluation['p'])
+    def _visualize(self, task, evaluation, logger, path, draw):
+        print(evaluation, file=open(os.path.join(path, self.name+".txt"),"w"))
+        logger("{} - Spearman Rho: {}".format(task, evaluation['rho']))
+        logger("{} - Spearman p-value: {}".format(task, evaluation['p']))
 
 
 class LogLikelihood(EvaluationMethod):
@@ -161,8 +175,9 @@ class LogLikelihood(EvaluationMethod):
                 'average_log_likelihood': log_likelihood / len(data['sets_by_confidence']),
                 'average_optimal_log_likelihood': optimal_log_likelihood / len(data['sets_by_confidence'])}
 
-    def _visualize(self, task, evaluation):
-        print(task, '-', 'Sum of Log Likelihoods:', evaluation['log_likelihood'])
+    def _visualize(self, task, evaluation, logger, path, draw):
+        print(evaluation, file=open(os.path.join(path, self.name+".txt"),"w"))
+        logger("{} - Sum of Log Likelihoods: {}".format(task, evaluation['log_likelihood']))
 
 
 class CalibrationAUC(EvaluationMethod):
@@ -194,12 +209,11 @@ class CalibrationAUC(EvaluationMethod):
             miscalibration_area += np.average([miscalibration[i-1], miscalibration[i]]) * 0.001
 
 
-        
         return {'fraction_under_thresholds': fraction_under_thresholds,
                 'thresholds': thresholds,
                 'miscalibration_area': miscalibration_area}
-    
-    def _visualize(self, task, evaluation):
+
+    def _visualize(self, task, evaluation, logger, path, draw):
         # Ideal curve.
         plt.plot(evaluation['thresholds'], evaluation['thresholds'])
 
@@ -209,7 +223,11 @@ class CalibrationAUC(EvaluationMethod):
 
         plt.title(task)
 
-        plt.show()
+        plt.savefig(os.path.join(path, self.name+".pdf"))
+        if draw: plt.show()
+        plt.close()
+
+        print(evaluation, file=open(os.path.join(path, self.name+".txt"),"w"))
 
 
 class Boxplot(EvaluationMethod):
@@ -233,7 +251,7 @@ class Boxplot(EvaluationMethod):
                 'max_confidence': max_confidence,
                 'data': data}
 
-    def _visualize(self, task, evaluation):
+    def _visualize(self, task, evaluation, logger, path, draw):
         errors_by_confidence = evaluation['errors_by_confidence']
         x_vals = list(np.linspace(evaluation['min_confidence'],
                                   evaluation['max_confidence'],
@@ -245,67 +263,99 @@ class Boxplot(EvaluationMethod):
             f'{len(errors_by_confidence[i])} points' for i in range(10))
         plt.xticks(x_vals, names)
         plt.xlim((evaluation['min_confidence'], evaluation['max_confidence']))
-        Scatter().visualize(task, evaluation['data'])
+        Scatter().visualize(task, evaluation['data'], logger, path, draw)
 
 
 class ConfidenceEvaluator:
     methods = [Cutoffs(), AbsScatter(), LogScatter(), Spearman(), LogLikelihood(), Boxplot(), CalibrationAUC()]
 
     @staticmethod
-    def save(val_predictions, val_targets, val_confidence, test_predictions, test_targets, test_confidence, args):
-        f = open(args.save_confidence, 'w+')
+    def save(val_predictions, val_targets, val_confidence, val_stds, val_smiles,
+             test_predictions, test_targets, test_confidence, test_stds, test_smiles,
+             val_entropy, test_entropy, args):
 
-        val_data = ConfidenceEvaluator._log(val_predictions, val_targets, val_confidence, args)
-        test_data = ConfidenceEvaluator._log(test_predictions, test_targets, test_confidence, args)
+        f = open(args.save_confidence, 'w+')
+        val_data = ConfidenceEvaluator._log(val_predictions, val_targets,
+                                            val_confidence, val_stds, val_smiles,
+                                            val_entropy, args)
+        test_data = ConfidenceEvaluator._log(test_predictions, test_targets,
+                                             test_confidence, test_stds, test_smiles,
+                                             test_entropy, args)
 
         json.dump({'validation': val_data, 'test': test_data}, f)
         f.close()
 
     @staticmethod
-    def _log(predictions, targets, confidence, args):
+    def _log(predictions, targets, confidence, stds, smiles, entropy, args):
         log = {}
 
-        # Loop through all subtasks.    
+        targets = np.array(targets)
+
+        # Hardcoded
+        if args.atomistic:
+            task_names = ["U0"]
+        else:
+            task_names = get_task_names(args.data_path)
+
+        # Loop through all subtasks.
         for task in range(args.num_tasks):
             mask = targets[:, task] != None
 
             task_predictions = np.extract(mask, predictions[:, task])
             task_targets = np.extract(mask, targets[:, task])
             task_confidence = np.extract(mask, confidence[:, task])
+            task_stds = np.extract(mask, stds[:, task])
             task_error = list(task_predictions - task_targets)
 
-            task_sets = [{'prediction': task_set[0],
-                          'target': task_set[1],
-                          'confidence': task_set[2],
-                          'error': task_set[3]} for task_set in zip(
-                                        task_predictions,
-                                        task_targets,
-                                        task_confidence,
-                                        task_error)]
+            # Extract smiles for this task
+            task_smiles = np.extract(mask,smiles)
+
+            task_set_names = ["prediction", "target", "confidence", "stds",
+                              "error"]
+            task_data = (task_predictions, task_targets,
+                         task_confidence, task_stds, task_error, )
+
+            if not args.no_smiles_export:
+                # Extract smiles for this task
+                task_smiles = np.extract(mask,smiles)
+                task_set_names.append("smiles")
+                task_data = task_data + (task_smiles,)
+
+            if args.use_entropy:
+                task_entropy = np.extract(mask, entropy[:, task])
+                task_set_names.append("entropy")
+                task_data = task_data + (task_entropy,)
+
+            task_sets = [dict(zip(task_set_names, task_set)) for task_set in zip(*task_data)]
 
             sets_by_confidence = sorted(task_sets,
                                         key=lambda pair: pair['confidence'],
                                         reverse=True)
-
             sets_by_error = sorted(task_sets,
                                    key=lambda pair: np.abs(pair['error']),
                                    reverse=True)
 
-            log[args.task_names[task]] = {
+            log[task_names[task]] = {
                 'sets_by_confidence': sets_by_confidence,
                 'sets_by_error': sets_by_error}
+
+            if args.use_entropy:
+                sets_by_entropy = sorted(task_sets,
+                                       key=lambda pair: np.abs(pair['entropy']),
+                                       reverse=True)
+                log[task_names[task]]['sets_by_entropy'] = sets_by_entropy
 
         return log
 
     @staticmethod
-    def visualize(file_path, methods):
+    def visualize(file_path, methods, logger, save_dir, draw):
         f = open(file_path)
         log = json.load(f)['test']
 
         for task, data in log.items():
             for method in ConfidenceEvaluator.methods:
                 if method.name in methods:
-                    method.visualize(task, data)
+                    method.visualize(task, data, logger, save_dir, draw)
 
         f.close()
 
@@ -331,20 +381,20 @@ class ConfidenceEvaluator:
         def objective_function(beta, confidence, errors, lambdas):
             # Construct prediction through lambdas and betas.
             pred_vars = np.zeros(len(confidence))
-            
+
             for i in range(len(beta)):
                 pred_vars += np.abs(beta[i]) * lambdas[i](confidence**2)
             pred_vars = np.clip(pred_vars, 0.001, None)
             costs = np.log(pred_vars) / 2 + errors**2 / (2 * pred_vars)
 
             return(np.sum(costs))
-        
+
         def calibrate_sets(sets, sigmas, lambdas):
             calibrated_sets = []
             for set_ in sets:
                 calibrated_set = set_.copy()
                 calibrated_set['confidence'] = 0
-                
+
                 for i in range(len(sigmas)):
                     calibrated_set['confidence'] += sigmas[i] * lambdas[i](set_['confidence']**2)
                 calibrated_sets.append(calibrated_set)
@@ -369,7 +419,7 @@ class ConfidenceEvaluator:
 
             result = minimize(objective_function, beta_init, args=(confidence, errors, lambdas),
                             method='BFGS', options={'maxiter': 500})
-            
+
             calibration_coefficients[task] = np.abs(result.x)
 
             scaled_val_data = {}
@@ -381,7 +431,7 @@ class ConfidenceEvaluator:
             scaled_test_data['sets_by_error'] = calibrate_sets(test_log[task]['sets_by_error'], np.abs(result.x), lambdas)
             scaled_test_data['sets_by_confidence'] = calibrate_sets(test_log[task]['sets_by_confidence'], np.abs(result.x), lambdas)
             scaled_test_log[task] = scaled_test_data
-        
+
         f.close()
 
         return {'validation': scaled_val_log, 'test': scaled_test_log}, calibration_coefficients

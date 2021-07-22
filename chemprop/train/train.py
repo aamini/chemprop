@@ -8,11 +8,9 @@ import torch
 import torch.nn as nn
 from torch.optim import Optimizer
 from torch.optim.lr_scheduler import _LRScheduler
-from tqdm import trange
 
-from chemprop.data import MoleculeDataset
+from chemprop.data import MoleculeDataset, get_data_batches
 from chemprop.nn_utils import compute_gnorm, compute_pnorm, NoamLR
-
 
 def train(model: nn.Module,
           data: Union[MoleculeDataset, List[MoleculeDataset]],
@@ -38,29 +36,23 @@ def train(model: nn.Module,
     :return: The total number of iterations (training examples) trained on so far.
     """
     debug = logger.debug if logger is not None else print
-    
-    model.train()
-    
-    data = deepcopy(data)
 
-    data.shuffle()
+    model.train()
+
+    data = deepcopy(data)
 
     if args.confidence == 'bootstrap':
         data.sample(int(4 * len(data) / args.ensemble_size))
 
     loss_sum, iter_count = 0, 0
 
-    num_iters = len(data) // args.batch_size * args.batch_size  # don't use the last batch if it's small, for stability
-
     iter_size = args.batch_size
 
-    for i in trange(0, num_iters, iter_size):
+    for index, (batch, features_batch, target_batch, mol_batch_len) in \
+            enumerate(get_data_batches(data, iter_size, use_last=False,
+                                       shuffle=True, quiet=args.quiet)):
+
         # Prepare batch
-        if i + args.batch_size > len(data):
-            break
-        mol_batch = MoleculeDataset(data[i:i + args.batch_size])
-        smiles_batch, features_batch, target_batch = mol_batch.smiles(), mol_batch.features(), mol_batch.targets()
-        batch = smiles_batch
         mask = torch.Tensor([[x is not None for x in tb] for tb in target_batch])
         targets = torch.Tensor([[0 if x is None else x for x in tb] for tb in target_batch])
 
@@ -76,19 +68,33 @@ def train(model: nn.Module,
         model.zero_grad()
         preds = model(batch, features_batch)
 
-        if model.confidence:
-            pred_targets = preds[:, [j for j in range(len(preds[0])) if j % 2 == 0]]
-            pred_var = preds[:, [j for j in range(len(preds[0])) if j % 2 == 1]]
-            loss = loss_func(pred_targets, pred_var, targets)
-            # sigma = ((pred_targets - targets) ** 2).detach()
-            # loss = loss_func(pred_targets, targets) * class_weights * mask
-            # loss += nn.MSELoss(reduction='none')(pred_sigma, sigma) * class_weights * mask
+        if model.confidence: # confidence is learned
+            if args.confidence == 'evidence':
+                if args.dataset_type == 'regression': # normal inverse gamma
+                    # split into four parameters and feed into loss
+                    #means, lambdas, alphas, betas = torch.split(preds, preds.shape[1]//4, dim=1)
+                    means =  preds[:, [j for j in range(len(preds[0])) if j % 4 == 0]]
+                    lambdas =  preds[:, [j for j in range(len(preds[0])) if j % 4 == 1]]
+                    alphas =  preds[:, [j for j in range(len(preds[0])) if j % 4 == 2]]
+                    betas  =  preds[:, [j for j in range(len(preds[0])) if j % 4 == 3]]
+                    loss = loss_func(means, lambdas, alphas, betas, targets)
+                if args.dataset_type == 'classification': # dirichlet
+                    loss = loss_func(targets, alphas=preds)
+            else: # gaussian MVE for regression
+                assert args.dataset_type == 'regression'
+                pred_targets = preds[:, [j for j in range(len(preds[0])) if j % 2 == 0]]
+                pred_var = preds[:, [j for j in range(len(preds[0])) if j % 2 == 1]]
+                loss = loss_func(pred_targets, pred_var, targets)
+
         else:
-            loss = loss_func(preds, targets) * class_weights * mask
+            loss = loss_func(preds, targets)
+
+        # Only apply loss to valid tasks targets and then average over samples
+        loss = loss * class_weights * mask
         loss = loss.sum() / mask.sum()
 
         loss_sum += loss.item()
-        iter_count += len(mol_batch)
+        iter_count += mol_batch_len
 
         loss.backward()
         optimizer.step()
@@ -96,7 +102,7 @@ def train(model: nn.Module,
         if isinstance(scheduler, NoamLR):
             scheduler.step()
 
-        n_iter += len(mol_batch)
+        n_iter += mol_batch_len
 
         # Log and/or add to tensorboard
         if (n_iter // args.batch_size) % args.log_frequency == 0:
@@ -115,5 +121,9 @@ def train(model: nn.Module,
                 writer.add_scalar('gradient_norm', gnorm, n_iter)
                 for i, lr in enumerate(lrs):
                     writer.add_scalar(f'learning_rate_{i}', lr, n_iter)
+
+        # Debug condition
+        if index > 2 and args.debug:
+            break
 
     return n_iter

@@ -1,0 +1,22 @@
+{ 
+    "seeds" : [2,3,4], 
+    "n_ensembles" : 5, 
+    "datasets" : ["qm9"],  
+    "dataset_types" : ["regression"],
+    "dataset_splits": ["random"], 
+    "methods" : ["ensemble", "evidence_new_reg"], 
+    "reg_coefs": [0.2, 0.2], 
+    "split_sizes" : [0.8, 0.1, 0.1], 
+    "save_dir" : "results/atomistic_01_04_21/",
+    "debug" : false, 
+    "use_gpu" : true, 
+    "job_name_prefix" : "atomistic", 
+    "experiment_name" : "atomistic", 
+    "num_minutes" : 0, 
+    "num_hours" : 15, 
+    "num_days" : 0, 
+    "use_slurm" : true, 
+    "atomistic" : true,
+    "max_lr_atomistic" : 0.0002,
+    "final_lr_atomistic" : 1e-4
+}

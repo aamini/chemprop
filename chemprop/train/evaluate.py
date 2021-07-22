@@ -2,9 +2,11 @@ import logging
 from typing import Callable, List
 
 import torch.nn as nn
+import numpy as np
 
 from .predict import predict
 from chemprop.data import MoleculeDataset, StandardScaler
+
 
 
 def evaluate_predictions(preds: List[List[float]],
@@ -71,7 +73,8 @@ def evaluate(model: nn.Module,
              batch_size: int,
              dataset_type: str,
              scaler: StandardScaler = None,
-             logger: logging.Logger = None) -> List[float]:
+             logger: logging.Logger = None,
+             quiet: bool = False) -> List[float]:
     """
     Evaluates an ensemble of models on a dataset.
 
@@ -89,9 +92,11 @@ def evaluate(model: nn.Module,
         model=model,
         data=data,
         batch_size=batch_size,
-        scaler=scaler
+        scaler=scaler,
+        quiet=quiet,
     )
 
+    # preds has un-scaled units, targets should also be un-scaled
     targets = data.targets()
 
     results = evaluate_predictions(

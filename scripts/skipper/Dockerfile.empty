@@ -1,0 +1,25 @@
+# This is an example docker file that you can use to build your own docker
+# image and then sync it with your docker repo.
+# docker build -t chemprop --build-arg SSH_PRIVATE_KEY="$(cat ~/.ssh/id_rsa)" .
+
+# Base Image on DRL image
+FROM mitdrl/ubuntu:latest
+
+
+# install git
+RUN apt-get update
+RUN apt-get install -y git
+
+# Add credentials on build
+ARG SSH_PRIVATE_KEY
+RUN mkdir ~/.ssh/
+RUN echo "${SSH_PRIVATE_KEY}" > ~/.ssh/id_rsa
+
+# Make sure your domain is accepted
+RUN touch ~/.ssh/known_hosts
+RUN chmod 600 ~/.ssh/*
+RUN ssh-keyscan github.com >> ~/.ssh/known_hosts
+
+
+# Update something to the bashrc (/etc/bashrc_skipper) to customize your shell
+RUN echo -e "alias py='python'" >> /etc/bashrc_skipper

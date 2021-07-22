@@ -10,11 +10,17 @@ dependencies:
   - GPy
   - hyperopt
   - numpy
-  - pytorch
+  - pytorch=1.5
   - rdkit
   - scikit-learn
   - scipy
   - tensorboardX
-  - tensorflow
+  - tensorflow-gpu=1.13
   - torchvision
   - tqdm
+  - seaborn
+  - pip
+
+  - pip:
+    - schnetpack
+    - psutil

@@ -1,0 +1,20 @@
+{ 
+    "seeds" : [1,2,3,4,5,6,7,8,9], 
+    "n_ensembles" : 5, 
+    "datasets" : ["ld50_zhu", "clearance_hepatocyte_az", "ppbr_az"],
+    "dataset_types" : ["regression", "regression", "regression"],
+    "dataset_splits": ["random", "random", "random"],
+    "methods" : ["ensemble", "dropout", "evidence_new_reg"],
+    "reg_coefs": [0.2, 0.2, 0.2],
+    "split_sizes" : [0.8, 0.1, 0.1], 
+    "save_dir" : "results/2021_01_31_low_n/",
+    "debug" : false, 
+    "use_gpu" : true, 
+    "job_name_prefix" : "regression_low_n", 
+    "experiment_name" : "regression_low_n", 
+    "num_minutes" : 0, 
+    "num_hours" : 8, 
+    "num_days" : 0, 
+    "use_slurm" : true,
+    "atomistic" : false
+}

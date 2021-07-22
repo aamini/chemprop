@@ -2,7 +2,7 @@ from argparse import ArgumentParser, Namespace
 import json
 import os
 from tempfile import TemporaryDirectory
-
+from datetime import datetime
 import torch
 
 from chemprop.utils import makedirs
@@ -42,6 +42,34 @@ def add_predict_args(parser: ArgumentParser):
                         help='Turn off scaling of features')
 
 
+def add_atomistic_args(parser: ArgumentParser):
+    """
+    Adds schnet  arguments to an ArgumentParser.
+
+    :param parser: An ArgumentParser.
+    """
+    parser.add_argument('--n_atom_basis', type=int, default=128,
+                        help='Number of atoms to use for representation')
+    parser.add_argument('--n_filters', type=int, default=128,
+                        help='Number of filters to use')
+    parser.add_argument('--n_interactions', type=int, default=6,
+                        help='Number of interaction layers to use')
+    parser.add_argument('--n_gaussians', type=int, default=50,
+                        help='Number of Gaussians to use')
+    parser.add_argument('--cutoff', type=int, default=10,
+                        help='Cosine function cutoff')
+    parser.add_argument('--slurm_job', default=False,
+                        action="store_true",
+                        help='If true, locally copy qm9db')
+
+    # Scheduler params
+    parser.add_argument('--patience', default=25,
+                        action="store", type=int,
+                        help="Epochs to wait before decreasing lr")
+    parser.add_argument('--factor', default=0.8,
+                        action="store", type=float,
+                        help='Factor to decrease LR by')
+
 def add_train_args(parser: ArgumentParser):
     """
     Adds training arguments to an ArgumentParser.
@@ -52,6 +80,9 @@ def add_train_args(parser: ArgumentParser):
     parser.add_argument('--gpu', type=int,
                         choices=list(range(torch.cuda.device_count())),
                         help='Which GPU to use')
+    parser.add_argument('--debug', action="store_true",
+                        default=False,
+                        help='If true, subset the data for debugging')
     parser.add_argument('--data_path', type=str,
                         help='Path to data CSV file')
     parser.add_argument('--test', action='store_true', default=False,
@@ -86,8 +117,13 @@ def add_train_args(parser: ArgumentParser):
                         help='Path to file with features for separate test set')
     parser.add_argument('--split_type', type=str, default='random',
                         choices=['random', 'scaffold_balanced', 'scaffold',
-                                 'predetermined'],
+                                 'predetermined', 'ood_test'],
                         help='Method of splitting the data into train/val/test')
+
+    parser.add_argument('--ood_save_dir', type=str,
+                        default="data/saved_dist",
+                        help='Directory save all by all tani sim for dataset')
+
     parser.add_argument('--split_sizes', type=float, nargs=3, default=[0.8, 0.1, 0.1],
                         help='Split proportions for train/validation/test sets')
     parser.add_argument('--num_folds', type=int, default=1,
@@ -122,6 +158,12 @@ def add_train_args(parser: ArgumentParser):
     parser.add_argument('--config_path', type=str,
                         help='Path to a .json file containing arguments. Any arguments present in the config'
                              'file will override arguments specified via the command line or by the defaults.')
+    parser.add_argument('--atomistic', action="store_true", default=False,
+                        help='If true, use atomistic networks in simulation')
+    parser.add_argument('--task_inds', type=int, default=[], nargs='+',
+                        help='Indices of tasks you want to train on.')
+    parser.add_argument('--test_preds_path', type=str,
+                        help='Path to where predictions on test set will be saved.')
 
     # Training arguments
     parser.add_argument('--epochs', type=int, default=30,
@@ -140,10 +182,14 @@ def add_train_args(parser: ArgumentParser):
                         help='Final learning rate')
     parser.add_argument('--no_features_scaling', action='store_true', default=False,
                         help='Turn off scaling of features')
+    parser.add_argument('--stokes_balance', type=float, default=1,
+                        help='Balance for Stokes analysis')
 
     # Model arguments
     parser.add_argument('--ensemble_size', type=int, default=1,
                         help='Number of models in ensemble')
+    parser.add_argument('--threads', type=int, default=1,
+                        help='Number of parallel threads to spawn ensembles in. 1 thread trains in serial.')
     parser.add_argument('--hidden_size', type=int, default=300,
                         help='Dimensionality of hidden layers in MPN')
     parser.add_argument('--bias', action='store_true', default=False,
@@ -167,8 +213,30 @@ def add_train_args(parser: ArgumentParser):
 
     # Confidence Arguments
     parser.add_argument('--confidence', type=str,
-                        choices=[None, 'gaussian', 'random_forest', 'ensemble', 'tanimoto', 'conformal', 'probability', 'conformal', 'nn', 'boost', 'latent_space', 'bootstrap', 'snapshot', 'dropout', 'fp_random_forest', 'fp_gaussian'], default=None,
+                        choices=[None, 'gaussian', 'random_forest', 'ensemble',
+                                 'tanimoto', 'conformal', 'probability',
+                                 'conformal', 'nn', 'boost', 'latent_space',
+                                 'bootstrap', 'snapshot', 'dropout',
+                                 'fp_random_forest', 'fp_gaussian', 'evidence',
+                                 'sigmoid'], default=None,
                         help='Measure confidence values for the prediction.')
+    parser.add_argument("--regularizer_coeff", type=float,
+                        default=1.0,
+                        help="Coefficient to scale the loss function regularizer")
+    parser.add_argument('--new_loss', action="store_true", default=False,
+                        help=("If true, use the new evidence loss"
+                              " prediction with the model"))
+    parser.add_argument('--no_dropout_inference', action="store_true", default=False,
+                        help="If true, don't use dropout for mean inference")
+
+    parser.add_argument('--use_entropy', action="store_true", default=False,
+                        help=("If true, also output the entropy for each"
+                              " prediction with the model"))
+
+    parser.add_argument('--no_smiles_export', action="store_true", default=False,
+                        help=("If set, avoid storing the smiles with exported"
+                              "data prediction with the model"))
+
     parser.add_argument('--calibrate_confidence', action='store_true', default=False, help='Calibrate confidence by test data.')
     parser.add_argument('--save_confidence', type=str, default=None,
                         help='Measure confidence values for the prediction.')
@@ -180,6 +248,32 @@ def add_train_args(parser: ArgumentParser):
                         nargs='+',
                         help='List of confidence evaluation methods.')
 
+    # Active Learning Arguments
+    parser.add_argument('--al_init_ratio', type=float, default=0.1,
+                        help='Percent of training data to use on first active learning iteration')
+    parser.add_argument('--al_end_ratio', type=float, default=None,
+                        help='Fraction of total data To stop active learning early. By default, explore full train data')
+    parser.add_argument('--num_al_loops', type=int, default=20,
+                        help='Number of active learning loops to add new data')
+    parser.add_argument('--al_topk', type=int, default=1000,
+                        help='Top-K acquired molecules to consider during active learning')
+
+    parser.add_argument('--al_std_mult', type=float, default=1,
+                        help='Multiplier for std in lcb acquisition')
+
+    parser.add_argument('--al_step_scale', type=str, default="log",
+                        help='scale of spacing for active learning steps (log, linear)')
+    parser.add_argument('--acquire_min', action='store_true',
+                        help='if we should acquire min or max score molecules')
+    parser.add_argument('--al_strategy', type=str, nargs='+',
+                        choices=["random",
+                                "explorative_greedy", "explorative_sample",
+                                "score_greedy", "score_sample",
+                                "exploit", "exploit_ucb", "exploit_lcb", "exploit_ts"],
+                        default=["explorative_greedy"],
+                        help='Strategy for active learning regime')
+    parser.add_argument('--use_std', action='store_true', default=False,
+                        help='Use std for evidence during active learning')
 
 def update_checkpoint_args(args: Namespace):
     """
@@ -260,10 +354,24 @@ def modify_train_args(args: Namespace):
     assert args.dataset_type is not None
 
     if args.save_dir is not None:
+        timestamp = datetime.now().strftime("%y%m%d-%H%M%S%f")
+        dataset = os.path.splitext(os.path.basename(args.data_path))[0]
+        log_path = "{}_{}_{}".format(timestamp, dataset, args.confidence)
+        args.save_dir = os.path.join(args.save_dir, log_path)
+
+        if os.path.exists(args.save_dir):
+            num_ctr = 0
+            while (os.path.exists(f"{args.save_dir}_{num_ctr}")):
+                num_ctr += 1
+            args.save_dir = f"{args.save_dir}_{num_ctr}"
+
         makedirs(args.save_dir)
     else:
         temp_dir = TemporaryDirectory()
         args.save_dir = temp_dir.name
+
+    if args.save_confidence is not None:
+        args.save_confidence = os.path.join(args.save_dir, args.save_confidence)
 
     args.cuda = not args.no_cuda and torch.cuda.is_available()
     del args.no_cuda
@@ -281,6 +389,11 @@ def modify_train_args(args: Namespace):
             (args.dataset_type == 'regression' and args.metric in ['rmse', 'mae', 'r2'])):
         raise ValueError(
             f'Metric "{args.metric}" invalid for dataset type "{args.dataset_type}".')
+
+    if (args.dataset_type=="regression" and args.confidence=="entropy"):
+        raise ValueError(
+            f"Confidence method {args.confidence} is not compatible with dataset type {args.dataset_type}")
+
 
     args.minimize_score = args.metric in ['rmse', 'mae']
 
@@ -314,6 +427,9 @@ def parse_train_args() -> Namespace:
     """
     parser = ArgumentParser()
     add_train_args(parser)
+    temp_args, unk_args  = parser.parse_known_args()
+    if temp_args.atomistic:
+        add_atomistic_args(parser)
     args = parser.parse_args()
     modify_train_args(args)
 

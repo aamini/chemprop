@@ -1,0 +1,8 @@
+**/.git
+*.pyc
+
+logs
+model-checkpoints
+histories
+
+*.tar.gz

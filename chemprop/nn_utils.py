@@ -5,7 +5,7 @@ import numpy as np
 import torch
 import torch.nn as nn
 from torch.optim import Optimizer
-from torch.optim.lr_scheduler import _LRScheduler
+from torch.optim.lr_scheduler import _LRScheduler, ReduceLROnPlateau
 from tqdm import trange
 
 from chemprop.data import MoleculeDataset
@@ -208,3 +208,47 @@ class NoamLR(_LRScheduler):
                 self.lr[i] = self.final_lr[i]
 
             self.optimizer.param_groups[i]['lr'] = self.lr[i]
+
+class PlateauScheduler(ReduceLROnPlateau):
+    """
+    Copied directly from Schnetpack:
+
+    This class provides a thin wrapper around
+    torch.optim.lr_schedule.ReduceLROnPlateau. It takes the parameters
+    of ReduceLROnPlateau as arguments and creates a scheduler from it whose
+    step() function will be called every epoch.
+    """
+
+    def __init__(
+        self,
+        optimizer,
+        patience=25,
+        factor=0.5,
+        final_lr=1e-6,
+        window_length=1,
+        stop_after_min=False
+    ):
+        """
+        Initializes the learning rate scheduler.
+
+        :param optimizer: A PyTorch optimizer.
+        :param patience: Num of epochs to wait until decreasing the learning rate 
+        :param factor: How much to reduce learning rate by
+        :param final_lr: The final learning rate (achieved after total_epochs).
+        :param window_length: window length over which losses are avged
+        :param stop_after_min: If true, continue to decrease LR after train
+        """
+
+        super(PlateauScheduler, self).__init__(optimizer, mode='min',
+                                               factor=factor,
+                                               patience=patience,
+                                               threshold=1e-4,
+                                               threshold_mode='rel',
+                                               cooldown=0, 
+                                               min_lr=final_lr, eps=1e-8,
+                                               verbose=False)
+
+    def get_lr(self) -> List[float]:
+        """Gets a list of the current learning rates."""
+        
+        return [i['lr'] for i in self.optimizer.param_groups]

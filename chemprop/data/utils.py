@@ -1,18 +1,28 @@
 from argparse import Namespace
 import csv
+import os
 from logging import Logger
 import pickle
 import random
 from typing import List, Set, Tuple
+from collections import defaultdict
+import pandas as pd
 
 from rdkit import Chem
+from rdkit.Chem import AllChem, DataStructs
 import numpy as np
-from tqdm import tqdm
+from sklearn.cluster import KMeans
+from tqdm import tqdm, trange
+import torch
 
-from .data import MoleculeDatapoint, MoleculeDataset
+from .data import MoleculeDatapoint, MoleculeDataset, AtomisticDataset
 from .scaffold import log_scaffold_stats, scaffold_split
 from chemprop.features import load_features
 
+# Atomistic ataloader
+import schnetpack as spk
+from schnetpack import AtomsData
+from schnetpack.datasets import QM9
 
 def get_task_names(path: str, use_compound_names: bool = False) -> List[str]:
     """
@@ -202,7 +212,7 @@ def split_data(data: MoleculeDataset,
     :param logger: A logger.
     :return: A tuple containing the train, validation, and test splits of the data.
     """
-    assert len(sizes) == 3 and sum(sizes) == 1
+    assert len(sizes) == 3 and sum(sizes) <= 1
 
     if args is not None:
         folds_file, val_fold_index, test_fold_index = \
@@ -247,22 +257,257 @@ def split_data(data: MoleculeDataset,
             val = train_val[train_size:]
 
         return MoleculeDataset(train), MoleculeDataset(val), MoleculeDataset(test)
-    
+
     elif split_type == 'scaffold_balanced':
         return scaffold_split(data, sizes=sizes, balanced=True, seed=seed, logger=logger)
-    
+
     elif split_type == 'scaffold':
         return scaffold_split(data, sizes=sizes, balanced=False, seed=seed, logger=logger)
+
+    elif split_type == 'ood_test':
+
+        os.makedirs(args.ood_save_dir, exist_ok=True)
+        dataset_name = args.data_path.rsplit("/", 1)[-1].split(".")[0]
+        save_file_name = os.path.join(args.ood_save_dir, f"{dataset_name}.p")
+
+        def tanimoto_sim_mat(x,y): 
+            # Calculate tanimoto distance with binary fingerprint 
+            intersection_mat =  x[:, None, :] & y[None, :, :]
+            union_mat =  x[:, None, :] | y[None, :, :]
+
+            intersection = intersection_mat.sum(-1)
+            union = union_mat.sum(-1)
+            return intersection / union
+
+        def tanimoto_in_chunks(x,y, max_second = 40): 
+            """ Compute tanimoto_sim_mat but break y into chunks
+            to avoid memory issue """
+            # Return tanimoto similarity
+            num_splits = (len(y) // max_second + 1 )
+            train_fp_chunks = np.array_split(y, num_splits)
+            dist_list = []
+            for x2 in tqdm(train_fp_chunks):
+                sim_mat = tanimoto_sim_mat(x, x2)
+                dist_list.append(sim_mat)
+            sim_mat = np.hstack(dist_list)
+            return sim_mat 
+
+        # Sort data for consistency 
+        data.sort(key= lambda x : x.smiles)
+
+        # Create fingerprints
+        mols = data.mols()
+        fps = []
+        fp_dict = {}
+        for mol_entry in data:
+            mol = mol_entry.mol
+            smi = mol_entry.smiles
+            arr = np.zeros((0, ), dtype=np.int8)
+            fp = AllChem.GetMorganFingerprintAsBitVect(mol, 2, nBits = 2048)
+            DataStructs.ConvertToNumpyArray(fp, arr)
+            fps.append(fp)
+            fp_dict[smi] = arr
+        fps = np.vstack(fps)
+        
+        all_indices = np.arange(len(mols))
+        current_train = np.ones(len(all_indices)).astype(bool)
+        current_val = np.zeros(len(all_indices)).astype(bool)
+        current_test_ood = np.zeros(len(all_indices)).astype(bool)
+        current_test_id = np.zeros(len(all_indices)).astype(bool)
+        current_test = np.zeros(len(all_indices)).astype(bool)
+
+        # Compute all by all tani_sim
+        print("Starting to compute all by all tani sim")
+
+        # All by all tanimoto similarity computation
+        if os.path.isfile(save_file_name): 
+            ## LOAD from file 
+            print("Loading tani sim from file")
+            tani_sim = pickle.load(open(save_file_name,"rb"))
+        else: 
+            ## SAVE into file
+            print("Creating tani sim.")
+            tani_sim = tanimoto_in_chunks(fps, fps, max_second = 10)
+            print("Writing tani sim into file")
+            pickle.dump(tani_sim, open(save_file_name, "wb"))
+
+
+        num_val = int(sizes[1] * len(data))
+        val_indices = np.random.choice(a = all_indices, size = num_val,
+                                       replace=False)
+
+        current_val[val_indices] = True
+        current_train[val_indices] = False
+
+        amount_in_test = int(sizes[2] * len(data))
+        amount_ood = int(0.5 * amount_in_test)
+
+        modified_sim = tani_sim.copy()
+
+        # Make self similarity = -1 
+        modified_sim[all_indices, all_indices] = -1
+
+        modified_sim[:, val_indices] = -1
+        modified_sim[val_indices, val_indices] = 1
+
+        n_num = 10
+        #print("Starting to add OOD values")
+        for _ in tqdm(range(amount_ood)): 
+            #max_sims = modified_sim.max(1)
+            #new_test_index = np.argmin(max_sims)
+
+            # Sort sims in increasing order
+            # Take the top n for in domain-ness
+
+            #max_sims = np.sort(modified_sim,1)[:, ::-1]
+            #top_n_mean = np.mean(max_sims[:, :n_num], 1)
+
+            top_n =  np.partition(modified_sim, -n_num, axis=1)[:, -n_num:]
+            top_n_mean = np.mean(top_n, 1)
+            new_test_index = np.argmin(top_n_mean)
+
+            ### So we don't select this item again:, , switch it's sims to 1
+
+            # So we don't consider the distance of any other item to
+            # new_test_index
+            modified_sim[:, new_test_index] = -1
+
+            # So we don't pick new_test_index again
+            modified_sim[new_test_index, :] = 1 
+
+            current_test_ood[new_test_index] = True
+            current_train[new_test_index] = False
+
+        # Now choose in domain samples
+        # Do this by sampling the _max_ max similiarities, rather than min max
+        # similarities
+        # So we don't pick any of the test items
+        modified_sim[current_test_ood, : ] = -1
+        modified_sim[current_val, : ] = -1
+        print("Starting to add ID values")
+        for _ in tqdm(range(amount_ood)): 
+            #max_sims = modified_sim.max(1)
+            #new_test_index = np.argmax(max_sims)
+
+            # Sort sims in decreasing order
+            # Take the top 20 for in domain-ness
+            #max_sims = np.sort(modified_sim,1)[:, ::-1]
+            #top_n_mean = np.mean(max_sims[:, :n_num], 1)
+
+            top_n =  np.partition(modified_sim, -n_num, axis=1)[:, -n_num:]
+            top_n_mean = np.mean(top_n, 1)
+
+            new_test_index = np.argmax(top_n_mean)
+
+            ### So we don't select this item again, switch it's sims to 1
+            # So we don't consider the distance of any other item to
+            # new_test_index
+            modified_sim[:, new_test_index] = -1
+            modified_sim[new_test_index, :] = -1
+
+            current_test_id[new_test_index] = True
+            current_train[new_test_index] = False
+
+        # Define one current test 
+        current_test[current_test_id] = True
+        current_test[current_test_ood] = True
+
+        # Subset the tani_sim matrix with test and train
+        sim_mat = tani_sim[current_test, : ][:, current_train]
+
+        ## Get top_n max sim for each item in train 
+        n_num_eval = 10
+        max_sims = np.mean(np.sort(sim_mat, 1)[:, ::-1][:, :n_num_eval], 1)
+        #max_sims = sim_mat.max(1)
+
+        # Now choose val samples
+        train_indices = set(np.argwhere(current_train).flatten().tolist())
+        test_indices = set(np.argwhere(current_test).flatten().tolist())
+        val_indices = set(np.argwhere(current_val).flatten().tolist())
+
+        train_indices = sorted(list(train_indices))
+        val_indices = sorted(list(val_indices))
+        test_indices = sorted(list(test_indices))
+
+        res = []
+        smi_to_ood = dict()
+        for index, (test_index, test_max_sim) in enumerate(zip(test_indices, 
+                                                               max_sims)): 
+            smi = data[test_index].smiles
+            partition = "ood" if current_test_ood[test_index] else "id" 
+            smi_to_ood[smi] = partition
+            entry = {"smiles" : smi, 
+                     "partition" : partition,
+                     "max_sim_to_train" : test_max_sim }
+            res.append(entry)
+
+        df = pd.DataFrame(res)
+
+        train = [data[i] for i in train_indices]
+        val = [data[i] for i in val_indices]
+        test = [data[i] for i in test_indices]
+
+        ## compute dist to train for each mol
+        #print("Computing sims")
+        #sims = []
+        #labels = []
+        #for test_mol in tqdm(test):
+        #    test_smiles = test_mol.smiles
+        #    test_fp = fp_dict[test_smiles]
+        #    max_sim = 0
+        #    for train_mol in train: 
+        #        train_smiles = train_mol.smiles
+        #        train_fp = fp_dict[train_smiles]
+        #        sim = (train_fp & test_fp).sum() / (train_fp | test_fp).sum()
+        #        if sim > max_sim: max_sim = sim
+        #    sims.append(max_sim)
+        #    labels.append(smi_to_ood[test_smiles])
+
+        #import matplotlib.pyplot as plt
+        #import seaborn as sns 
+
+        ##sims = np.array(sims)
+        ##labels = np.array(labels)
+        ##ood = sims[labels == "ood"]
+        ##id_ = sims[labels != "ood"]
+        ##sns.distplot(ood ,label = "ood", bins=50)
+        ##sns.distplot(id_ ,label = "id", bins=50)
+
+        #sims = df['max_sim_to_train'][df['partition'] == "id"]
+        #sns.distplot(sims, label="id", bins=50)
+
+        #sims = df['max_sim_to_train'][df['partition'] == "ood"]
+        #sns.distplot(sims, label="ood", bins=50)
+
+        #df = pd.DataFrame(res)
+        #plt.legend()
+        #plt.savefig("temp.png")
+
+        return MoleculeDataset(train), MoleculeDataset(val), MoleculeDataset(test), df
 
     elif split_type == 'random':
         data.shuffle(seed=seed)
 
         train_size = int(sizes[0] * len(data))
         train_val_size = int((sizes[0] + sizes[1]) * len(data))
+        train_val_test_size = int((sizes[0] + sizes[1] + sizes[2]) * len(data))
 
         train = data[:train_size]
+
+        #### If you want to balance Stokes primary data for debugging, do it here
+        if args.stokes_balance != 1.0:
+            train_balance = []
+
+            for mol in train:
+                if mol.targets[0] < 0.2:
+                    train_balance.append(mol)
+                else:
+                    if np.random.rand() < args.stokes_balance:
+                        train_balance.append(mol)
+            train = train_balance
+
         val = data[train_size:train_val_size]
-        test = data[train_val_size:]
+        test = data[train_val_size:train_val_test_size]
 
         return MoleculeDataset(train), MoleculeDataset(val), MoleculeDataset(test)
 
@@ -360,3 +605,62 @@ def validate_data(data_path: str) -> Set[str]:
             errors.add('Found a target which is not a number.')
 
     return errors
+
+def atomistic_to_molecule(data):
+    """
+    Converts a schnetpack atomistic dataset to a molecule dataset for chemprop
+    params
+    :param data: An atomistic dataset
+    :return: AtmoisticDataset as a subclass of MoleculeDataset
+    """
+
+    return AtomisticDataset(data)
+
+def get_data_batches(data : MoleculeDataset, iter_size : int,
+                     use_last : bool = False,
+                     shuffle : bool = False,
+                     quiet : bool = False):
+    """
+    Yield batch, features_batch, target_batch
+    :param data: Data to be batched
+    :param iter_size: Batch size
+    :params use_last: If true, retrun the last batch as well
+    :params shuffle: If true, shuffle the data
+    :params quite: If true, run on quiet
+    :return (batch,features,targets, batch_len)
+    """
+
+    # Atomistic network
+    if isinstance(data, AtomisticDataset) and data.preload == False:
+        data_loader  = spk.AtomsLoader(data, batch_size=iter_size, shuffle=shuffle)
+        for batch in tqdm(data_loader, disable=quiet):
+            U0 = batch[QM9.U0]
+            yield (batch, None, U0, len(U0))
+    else:
+        if shuffle:
+            data.shuffle()
+        if not use_last:
+            num_iters = len(data) // iter_size * iter_size # don't use the last batch if it's small, for stability
+        else:
+            num_iters = len(data)
+        my_range = range if quiet else trange
+        for i in my_range(0, num_iters, iter_size):
+            if i + iter_size > len(data) and not use_last:
+                break
+            mol_batch = data[i:i + iter_size]
+            if isinstance(data, AtomisticDataset):
+                def list_to_dict(LD):
+                    dict_of_arrays = {}
+                    for k in LD[0]:
+                        array = np.array([dic[k].numpy() for dic in LD])
+                        dict_of_arrays[k] = torch.from_numpy(array)
+                    return dict_of_arrays
+
+                batch = list_to_dict(mol_batch)
+                U0 = batch[QM9.U0]
+                yield (batch, None, U0, len(U0))
+            else:
+                mol_batch = MoleculeDataset(mol_batch)
+                smiles_batch, features_batch, target_batch = mol_batch.smiles(), mol_batch.features(), mol_batch.targets()
+                batch = smiles_batch
+                yield (batch, features_batch, target_batch, len(mol_batch))

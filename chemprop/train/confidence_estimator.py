@@ -10,7 +10,6 @@ from rdkit.Chem import AllChem
 
 from chemprop.utils import negative_log_likelihood
 
-
 def confidence_estimator_builder(confidence_method: str):
     return {
         'nn': NNEstimator,
@@ -23,40 +22,44 @@ def confidence_estimator_builder(confidence_method: str):
         'snapshot': SnapshotEstimator,
         'dropout': DropoutEstimator,
         'fp_random_forest': FPRandomForestEstimator,
-        'fp_gaussian': FPGaussianProcessEstimator
+        'fp_gaussian': FPGaussianProcessEstimator,
+        'evidence': EvidenceEstimator,
+        'sigmoid': SigmoidEstimator
     }[confidence_method]
 
 
 class ConfidenceEstimator:
-    def __init__(self, train_data, val_data, test_data, scaler, args):
+    def __init__(self, train_data, new_data, scaler, args):
         self.train_data = train_data
-        self.val_data = val_data
-        self.test_data = test_data
+        self.new_data = new_data
+        self.conf = np.zeros(shape=(len(self.new_data.smiles()), args.num_tasks))
+        self.var = np.zeros(shape=(len(self.new_data.smiles()), args.num_tasks))
+        self.computed_std = None
         self.scaler = scaler
         self.args = args
 
     def process_model(self, model, predict):
         pass
 
-    def compute_confidence(self, test_predictions):
+    def compute_confidence(self, new_preds):
         pass
 
     def _scale_confidence(self, confidence):
         return self.scaler.stds * confidence
 
+    def export_std(self): 
+        """ Export the computed std function. This is handeled in compute_confidence"""
+        return self.computed_std
+
 
 class DroppingEstimator(ConfidenceEstimator):
-    def __init__(self, train_data, val_data, test_data, scaler, args):
-        super().__init__(train_data, val_data, test_data, scaler, args)
+    def __init__(self, train_data, new_data, scaler, args):
+        super().__init__(train_data, new_data, scaler, args)
 
         self.sum_last_hidden_train = np.zeros(
             (len(self.train_data.smiles()), self.args.last_hidden_size))
-
-        self.sum_last_hidden_val = np.zeros(
-            (len(self.val_data.smiles()), self.args.last_hidden_size))
-
-        self.sum_last_hidden_test = np.zeros(
-            (len(self.test_data.smiles()), self.args.last_hidden_size))
+        self.sum_last_hidden_new = np.zeros(
+            (len(self.new_data.smiles()), self.args.last_hidden_size))
 
     def process_model(self, model, predict):
         model.eval()
@@ -66,141 +69,131 @@ class DroppingEstimator(ConfidenceEstimator):
             model=model,
             data=self.train_data,
             batch_size=self.args.batch_size,
-            scaler=None
+            scaler=None,
+            quiet=self.args.quiet
         )
-
         self.sum_last_hidden_train += np.array(last_hidden_train)
 
-        last_hidden_val = predict(
+        last_hidden_new = predict(
             model=model,
-            data=self.val_data,
+            data=self.new_data,
             batch_size=self.args.batch_size,
-            scaler=None
+            scaler=None,
+            quiet=self.args.quiet
         )
-
-        self.sum_last_hidden_val += np.array(last_hidden_val)
-
-        last_hidden_test = predict(
-            model=model,
-            data=self.test_data,
-            batch_size=self.args.batch_size,
-            scaler=None
-        )
-
-        self.sum_last_hidden_test += np.array(last_hidden_test)
+        self.sum_last_hidden_new += np.array(last_hidden_new)
 
     def _compute_hidden_vals(self):
         avg_last_hidden_train = self.sum_last_hidden_train / self.args.ensemble_size
-        avg_last_hidden_val = self.sum_last_hidden_val / self.args.ensemble_size
-        avg_last_hidden_test = self.sum_last_hidden_test / self.args.ensemble_size
-
-        return avg_last_hidden_train, avg_last_hidden_val, avg_last_hidden_test
+        avg_last_hidden_new = self.sum_last_hidden_new / self.args.ensemble_size
+        return avg_last_hidden_train, avg_last_hidden_new
 
 
 class NNEstimator(ConfidenceEstimator):
-    def __init__(self, train_data, val_data, test_data, scaler, args):
-        super().__init__(train_data, val_data, test_data, scaler, args)
-
-        self.sum_val_confidence = np.zeros(
-            (len(val_data.smiles()), args.num_tasks))
-
-        self.sum_test_confidence = np.zeros(
-            (len(test_data.smiles()), args.num_tasks))
+    def __init__(self, train_data, new_data, scaler, args):
+        super().__init__(train_data, new_data, scaler, args)
 
     def process_model(self, model, predict):
-        val_preds, val_confidence = predict(
+        preds, confidence = predict(
             model=model,
-            data=self.val_data,
+            data=self.new_data,
             batch_size=self.args.batch_size,
             scaler=self.scaler,
-            confidence=True
+            quiet=self.args.quiet,
+            confidence=True,
         )
+        if len(preds) != 0:
+            self.conf += np.array(confidence).clip(min=0)
 
-        if len(val_preds) != 0:
-            self.sum_val_confidence += np.array(val_confidence).clip(min=0)
+    def compute_confidence(self, new_preds):
+        return (new_preds, np.sqrt(self.conf / self.args.ensemble_size))
 
-        test_preds, test_confidence = predict(
+
+class SigmoidEstimator(ConfidenceEstimator):
+    def __init__(self, train_data, new_data, scaler, args):
+        super().__init__(train_data, new_data, scaler, args)
+
+    def process_model(self, model, predict):
+        def categorical_variance(p): #assumes binary classification
+            return p*(1-p)**2  + (1-p)*p**2
+
+        preds = predict(
             model=model,
-            data=self.test_data,
+            data=self.new_data,
             batch_size=self.args.batch_size,
             scaler=self.scaler,
-            confidence=True
+            quiet=self.args.quiet,
+            confidence=True,
         )
 
-        if len(test_preds) != 0:
-            self.sum_test_confidence += np.array(test_confidence).clip(min=0)
+        # Calculate the variance (option to compute entropy in run_training)
+        var = categorical_variance(np.array(preds))
+        if len(preds) != 0:
+            self.conf += var.clip(min=0)
 
-    def compute_confidence(self, val_predictions, test_predictions):
-        return (val_predictions,
-                np.sqrt(self.sum_val_confidence / self.args.ensemble_size),
-                test_predictions,
-                np.sqrt(self.sum_test_confidence / self.args.ensemble_size))
+    def compute_confidence(self, new_preds):
+        return (new_preds, np.sqrt(self.conf / self.args.ensemble_size))
+
+
+class EvidenceEstimator(ConfidenceEstimator):
+    def __init__(self, train_data, new_data, scaler, args):
+        super().__init__(train_data, new_data, scaler, args)
+
+    def process_model(self, model, predict):
+        preds, confidence, var  = predict(
+            model=model,
+            data=self.new_data,
+            batch_size=self.args.batch_size,
+            scaler=self.scaler,
+            quiet=self.args.quiet,
+            confidence=True, 
+            export_var = True, 
+        )
+
+        if len(preds) != 0:
+            self.conf += np.array(confidence).clip(min=0)
+            self.var += np.array(var).clip(min=0)
+
+    def compute_confidence(self, new_preds):
+        # Compute std for use in calibration curves
+        self.computed_std = np.sqrt(self.var / self.args.ensemble_size)
+        return (new_preds, np.sqrt(self.conf / self.args.ensemble_size))
 
 
 class GaussianProcessEstimator(DroppingEstimator):
-    def compute_confidence(self, val_predictions, test_predictions):
-        _, avg_last_hidden_val, avg_last_hidden_test = self._compute_hidden_vals()
+    def compute_confidence(self, new_preds):
+        avg_last_hidden_train, avg_last_hidden_new = self._compute_hidden_vals()
+        new_preds = np.zeros_like(self.conf)
 
-        val_predictions = np.ndarray(
-            shape=(len(self.val_data.smiles()), self.args.num_tasks))
-        val_confidence = np.ndarray(
-            shape=(len(self.val_data.smiles()), self.args.num_tasks))
-
-        test_predictions = np.ndarray(
-            shape=(len(self.test_data.smiles()), self.args.num_tasks))
-        test_confidence = np.ndarray(
-            shape=(len(self.test_data.smiles()), self.args.num_tasks))
-
-        transformed_val = self.scaler.transform(
-            np.array(self.val_data.targets()))
+        transformed = self.scaler.transform(np.array(self.train_data.targets()))
 
         for task in range(self.args.num_tasks):
             kernel = GPy.kern.Linear(input_dim=self.args.last_hidden_size)
             gaussian = GPy.models.SparseGPRegression(
-                avg_last_hidden_val,
-                transformed_val[:, task:task + 1], kernel)
+                avg_last_hidden_train,
+                transformed[:, task:task + 1], kernel)
             gaussian.optimize()
 
-            avg_val_preds, avg_val_var = gaussian.predict(
-                avg_last_hidden_val)
+            avg_preds, avg_var = gaussian.predict(avg_last_hidden_new)
 
-            val_predictions[:, task:task + 1] = avg_val_preds
-            val_confidence[:, task:task + 1] = np.sqrt(avg_val_var)
+            new_preds[:, task:task+1] = avg_preds
+            self.conf[:, task:task+1] = np.sqrt(avg_var)
 
-            avg_test_preds, avg_test_var = gaussian.predict(
-                avg_last_hidden_test)
-
-            test_predictions[:, task:task + 1] = avg_test_preds
-            test_confidence[:, task:task + 1] = np.sqrt(avg_test_var)
-
-        val_predictions = self.scaler.inverse_transform(val_predictions)
-        test_predictions = self.scaler.inverse_transform(test_predictions)
-        return (val_predictions, self._scale_confidence(val_confidence),
-                test_predictions, self._scale_confidence(test_confidence))
+        return (self.scaler.inverse_transform(new_preds),
+                self._scale_confidence(self.conf))
 
 
 class FPGaussianProcessEstimator(ConfidenceEstimator):
-    def compute_confidence(self, val_predictions, test_predictions):
+    def compute_confidence(self, new_preds):
         train_smiles = self.train_data.smiles()
-        val_smiles = self.val_data.smiles()
-        test_smiles = self.test_data.smiles()
+        new_smiles = self.new_data.smiles()
+        train_fps = np.array([morgan_fingerprint(s) for s in train_smiles])
+        new_fps = np.array([morgan_fingerprint(s) for s in new_smiles])
+
+        new_preds = np.zeros_like(self.conf)
 
         # Train targets are already scaled.
         scaled_train_targets = np.array(self.train_data.targets())
-
-        train_fps = np.array([morgan_fingerprint(s) for s in train_smiles])
-        val_fps = np.array([morgan_fingerprint(s) for s in val_smiles])
-        test_fps = np.array([morgan_fingerprint(s) for s in test_smiles])
-
-        val_predictions = np.ndarray(
-            shape=(len(self.val_data.smiles()), self.args.num_tasks))
-        val_confidence = np.ndarray(
-            shape=(len(self.val_data.smiles()), self.args.num_tasks))
-
-        test_predictions = np.ndarray(
-            shape=(len(self.test_data.smiles()), self.args.num_tasks))
-        test_confidence = np.ndarray(
-            shape=(len(self.test_data.smiles()), self.args.num_tasks))
 
         for task in range(self.args.num_tasks):
             kernel = GPy.kern.Linear(input_dim=train_fps.shape[1])
@@ -209,213 +202,124 @@ class FPGaussianProcessEstimator(ConfidenceEstimator):
                 scaled_train_targets[:, task:task + 1], kernel)
             gaussian.optimize()
 
-            val_preds, val_var = gaussian.predict(
-                val_fps)
+            avg_preds, avg_var = gaussian.predict(new_fps)
 
-            val_predictions[:, task:task + 1] = val_preds
-            val_confidence[:, task:task + 1] = np.sqrt(val_var)
+            new_preds[:, task:task+1] = avg_preds
+            self.conf[:, task:task+1] = np.sqrt(avg_var)
 
-            test_preds, test_var = gaussian.predict(
-                test_fps)
-
-            test_predictions[:, task:task + 1] = test_preds
-            test_confidence[:, task:task + 1] = np.sqrt(test_var)
-
-        val_predictions = self.scaler.inverse_transform(val_predictions)
-        test_predictions = self.scaler.inverse_transform(test_predictions)
-        return (val_predictions, self._scale_confidence(val_confidence),
-                test_predictions, self._scale_confidence(test_confidence))
+        return (self.scaler.inverse_transform(new_preds),
+            self._scale_confidence(self.conf))
 
 
 class RandomForestEstimator(DroppingEstimator):
-    def compute_confidence(self, val_predictions, test_predictions):
-        _, avg_last_hidden_val, avg_last_hidden_test = self._compute_hidden_vals()
+    def compute_confidence(self, new_preds):
+        avg_last_hidden_train, avg_last_hidden_new = self._compute_hidden_vals()
+        transformed = self.scaler.transform(np.array(self.train_data.targets()))
 
-        val_predictions = np.ndarray(
-            shape=(len(self.val_data.smiles()), self.args.num_tasks))
-        val_confidence = np.ndarray(
-            shape=(len(self.val_data.smiles()), self.args.num_tasks))
-
-        test_predictions = np.ndarray(
-            shape=(len(self.test_data.smiles()), self.args.num_tasks))
-        test_confidence = np.ndarray(
-            shape=(len(self.test_data.smiles()), self.args.num_tasks))
-
-        transformed_val = self.scaler.transform(
-            np.array(self.val_data.targets()))
+        new_preds = np.zeros_like(self.train_conf)
 
         n_trees = 128
         for task in range(self.args.num_tasks):
             forest = RandomForestRegressor(n_estimators=n_trees)
-            forest.fit(avg_last_hidden_val, transformed_val[:, task])
+            forest.fit(avg_last_hidden_train, transformed[:, task])
 
-            avg_val_preds = forest.predict(avg_last_hidden_val)
-            val_predictions[:, task] = avg_val_preds
+            new_preds[:, task] = forest.predict(avg_last_hidden_new)
+            individual_predictions = np.array([
+                estimator.predict(avg_last_hidden_new) for estimator in forest.estimators_])
+            self.conf[:, task] = np.std(individual_predictions, axis=0)
 
-            individual_val_predictions = np.array([estimator.predict(avg_last_hidden_val) for estimator in forest.estimators_])
-            val_confidence[:, task] = np.std(individual_val_predictions, axis=0)
-
-            avg_test_preds = forest.predict(avg_last_hidden_test)
-            test_predictions[:, task] = avg_test_preds
-
-            individual_test_predictions = np.array([estimator.predict(avg_last_hidden_test) for estimator in forest.estimators_])
-            test_confidence[:, task] = np.std(individual_test_predictions, axis=0)
-
-        val_predictions = self.scaler.inverse_transform(val_predictions)
-        test_predictions = self.scaler.inverse_transform(test_predictions)
-        return (val_predictions, self._scale_confidence(val_confidence),
-                test_predictions, self._scale_confidence(test_confidence))
+        return (self.scaler.inverse_transform(new_preds),
+                self._scale_confidence(self.conf))
 
 
 class FPRandomForestEstimator(ConfidenceEstimator):
-    def compute_confidence(self, val_predictions, test_predictions):
+    def compute_confidence(self, new_preds):
         train_smiles = self.train_data.smiles()
-        val_smiles = self.val_data.smiles()
-        test_smiles = self.test_data.smiles()
+        new_smiles = self.train_data.smiles()
+        train_fps = np.array([morgan_fingerprint(s) for s in train_smiles])
+        new_fps = np.array([morgan_fingerprint(s) for s in new_smiles])
+
+        new_preds = np.zeros_like(self.conf)
 
         # Train targets are already scaled.
         scaled_train_targets = np.array(self.train_data.targets())
-
-        train_fps = np.array([morgan_fingerprint(s) for s in train_smiles])
-        val_fps = np.array([morgan_fingerprint(s) for s in val_smiles])
-        test_fps = np.array([morgan_fingerprint(s) for s in test_smiles])
-
-        val_predictions = np.ndarray(
-            shape=(len(self.val_data.smiles()), self.args.num_tasks))
-        val_confidence = np.ndarray(
-            shape=(len(self.val_data.smiles()), self.args.num_tasks))
-
-        test_predictions = np.ndarray(
-            shape=(len(self.test_data.smiles()), self.args.num_tasks))
-        test_confidence = np.ndarray(
-            shape=(len(self.test_data.smiles()), self.args.num_tasks))
 
         n_trees = 128
         for task in range(self.args.num_tasks):
             forest = RandomForestRegressor(n_estimators=n_trees)
             forest.fit(train_fps, scaled_train_targets[:, task])
 
-            avg_val_preds = forest.predict(val_fps)
-            val_predictions[:, task] = avg_val_preds
+            new_preds[:, task] = forest.predict(new_fps)
+            individual_predictions = np.array([
+                estimator.predict(new_fps) for estimator in forest.estimators_])
+            self.conf[:, task] = np.std(individual_predictions, axis=0)
 
-            individual_val_predictions = np.array([estimator.predict(val_fps) for estimator in forest.estimators_])
-            val_confidence[:, task] = np.std(individual_val_predictions, axis=0)
-
-            avg_test_preds = forest.predict(test_fps)
-            test_predictions[:, task] = avg_test_preds
-
-            individual_test_predictions = np.array([estimator.predict(test_fps) for estimator in forest.estimators_])
-            test_confidence[:, task] = np.std(individual_test_predictions, axis=0)
-
-        val_predictions = self.scaler.inverse_transform(val_predictions)
-        test_predictions = self.scaler.inverse_transform(test_predictions)
-        return (val_predictions, self._scale_confidence(val_confidence),
-                test_predictions, self._scale_confidence(test_confidence))
+        return (self.scaler.inverse_transform(new_preds),
+                self._scale_confidence(self.conf))
 
 
 class LatentSpaceEstimator(DroppingEstimator):
-    def compute_confidence(self, val_predictions, test_predictions):
-        avg_last_hidden_train, avg_last_hidden_val, avg_last_hidden_test = self._compute_hidden_vals()
+    def compute_confidence(self, new_preds):
+        avg_last_hidden_train, avg_last_hidden_new = self._compute_hidden_vals()
 
-        val_confidence = np.zeros((len(self.val_data.smiles()), self.args.num_tasks))
-        test_confidence = np.zeros((len(self.test_data.smiles()), self.args.num_tasks))
-
-        for val_input in range(len(avg_last_hidden_val)):
+        for input_ in range(len(avg_last_hidden_new)):
             distances = np.zeros(len(avg_last_hidden_train))
             for train_input in range(len(avg_last_hidden_train)):
-                difference = avg_last_hidden_val[val_input] - avg_last_hidden_train[train_input]
+                difference = avg_last_hidden_new[input_] - avg_last_hidden_train[train_input]
                 distances[train_input] = np.sqrt(np.sum(difference * difference))
 
-            val_confidence[val_input, :] = sum(heapq.nsmallest(5, distances))/5
+            self.conf[input_, :] = sum(heapq.nsmallest(5, distances))/5
 
-        for test_input in range(len(avg_last_hidden_test)):
-            distances = np.zeros(len(avg_last_hidden_train))
-            for train_input in range(len(avg_last_hidden_train)):
-                difference = avg_last_hidden_test[test_input] - avg_last_hidden_train[train_input]
-                distances[train_input] = np.sqrt(np.sum(difference * difference))
-
-            test_confidence[test_input, :] = sum(heapq.nsmallest(5, distances))/5
-
-        return val_predictions, val_confidence, test_predictions, test_confidence
+        return (new_preds, self.conf)
 
 
 class EnsembleEstimator(ConfidenceEstimator):
-    def __init__(self, train_data, val_data, test_data, scaler, args):
-        super().__init__(train_data, val_data, test_data, scaler, args)
-        self.all_val_preds = None
-        self.all_test_preds = None
+    def __init__(self, train_data, new_data, scaler, args):
+        super().__init__(train_data, new_data, scaler, args)
+        self.all_preds = []
 
     def process_model(self, model, predict):
-        val_preds = predict(
+        preds = predict(
             model=model,
-            data=self.val_data,
+            data=self.new_data,
             batch_size=self.args.batch_size,
             scaler=self.scaler,
+            quiet=self.args.quiet,
         )
+        self.all_preds.append(preds)
 
-        test_preds = predict(
-            model=model,
-            data=self.test_data,
-            batch_size=self.args.batch_size,
-            scaler=self.scaler,
-        )
-
-        reshaped_val_preds = np.array(val_preds).reshape((len(self.val_data.smiles()), self.args.num_tasks, 1))
-        if self.all_val_preds is not None:
-            self.all_val_preds = np.concatenate((self.all_val_preds, reshaped_val_preds), axis=2)
-        else:
-            self.all_val_preds = reshaped_val_preds
-
-        reshaped_test_preds = np.array(test_preds).reshape((len(self.test_data.smiles()), self.args.num_tasks, 1))
-        if self.all_test_preds is not None:
-            self.all_test_preds = np.concatenate((self.all_test_preds, reshaped_test_preds), axis=2)
-        else:
-            self.all_test_preds = reshaped_test_preds
-
-    def compute_confidence(self, val_predictions, test_predictions):
-        val_confidence = np.sqrt(np.var(self.all_val_preds, axis=2))
-        test_confidence = np.sqrt(np.var(self.all_test_preds, axis=2))
-
-        return val_predictions, val_confidence, test_predictions, test_confidence
+    def compute_confidence(self, new_preds):
+        return (new_preds, np.std(self.all_preds, axis=0))
 
 
 class BootstrapEstimator(EnsembleEstimator):
-    def __init__(self, train_data, val_data, test_data, scaler, args):
-        super().__init__(train_data, val_data, test_data, scaler, args)   
+    def __init__(self, train_data, new_data, scaler, args):
+        super().__init__(train_data, new_data, scaler, args)
 
 
 class SnapshotEstimator(EnsembleEstimator):
-    def __init__(self, train_data, val_data, test_data, scaler, args):
-        super().__init__(train_data, val_data, test_data, scaler, args)   
+    def __init__(self, train_data, new_data, scaler, args):
+        super().__init__(train_data, new_data, scaler, args)
 
 
 class DropoutEstimator(EnsembleEstimator):
-    def __init__(self, train_data, val_data, test_data, scaler, args):
-        super().__init__(train_data, val_data, test_data, scaler, args)   
+    def __init__(self, train_data, new_data, scaler, args):
+        super().__init__(train_data, new_data, scaler, args)
 
 
 class TanimotoEstimator(ConfidenceEstimator):
-    def compute_confidence(self, val_predictions, test_predictions):
+    def compute_confidence(self, new_preds):
         train_smiles = self.train_data.smiles()
-        val_smiles = self.val_data.smiles()
-        test_smiles = self.test_data.smiles()
-
-        val_confidence = np.ndarray(
-            shape=(len(val_smiles), self.args.num_tasks))
-        test_confidence = np.ndarray(
-            shape=(len(test_smiles), self.args.num_tasks))
+        new_smiles = self.new_data.smiles()
 
         train_smiles_sfp = [morgan_fingerprint(s) for s in train_smiles]
+        new_smiles_sfp = [morgan_fingerprint(s) for s in new_smiles]
 
-        for i in range(len(val_smiles)):
-            val_confidence[i, :] = np.ones((self.args.num_tasks)) * tanimoto(
-                val_smiles[i], train_smiles_sfp, lambda x: sum(heapq.nsmallest(8, x))/8)
+        for i in range(len(new_smiles)):
+            self.conf[i, :] = np.ones((self.args.num_tasks)) * tanimoto(
+                new_smiles[i], train_smiles_sfp, lambda x: sum(heapq.nsmallest(8, x))/8)
 
-        for i in range(len(test_smiles)):
-            test_confidence[i, :] = np.ones((self.args.num_tasks)) * tanimoto(
-                test_smiles[i], train_smiles_sfp, lambda x: sum(heapq.nsmallest(8, x))/8)
-
-        return val_predictions, val_confidence, test_predictions, test_confidence
+        return (new_preds, self.conf)
 
 
 # Classification methods.

@@ -9,6 +9,8 @@ from rdkit import Chem
 from .scaler import StandardScaler
 from chemprop.features import get_features_generator
 
+from schnetpack.datasets import QM9
+
 
 class MoleculeDatapoint:
     """A MoleculeDatapoint contains a single molecule and its associated features and targets."""
@@ -121,7 +123,7 @@ class MoleculeDataset(Dataset):
         :return: A list of smiles strings.
         """
         return [d.smiles for d in self.data]
-    
+
     def mols(self) -> List[Chem.Mol]:
         """
         Returns the RDKit molecules associated with the molecules.
@@ -168,9 +170,9 @@ class MoleculeDataset(Dataset):
 
     def sample(self, sample_size: int):
         """
-        Samples a random subset of theh  dataset.
+        Samples a random subset of the dataset.
 
-        :param sample_size: The size of the sample to produce. 
+        :param sample_size: The size of the sample to produce.
         """
         self.data = random.sample(self.data, sample_size)
 
@@ -184,7 +186,7 @@ class MoleculeDataset(Dataset):
         if seed is not None:
             random.seed(seed)
         random.shuffle(self.data)
-    
+
     def normalize_features(self, scaler: StandardScaler = None, replace_nan_token: int = 0) -> StandardScaler:
         """
         Normalizes the features of the dataset using a StandardScaler (subtract mean, divide by standard deviation).
@@ -213,7 +215,7 @@ class MoleculeDataset(Dataset):
             d.set_features(self.scaler.transform(d.features.reshape(1, -1))[0])
 
         return self.scaler
-    
+
     def set_targets(self, targets: List[List[float]]):
         """
         Sets the targets for each molecule in the dataset. Assumes the targets are aligned with the datapoints.
@@ -233,6 +235,28 @@ class MoleculeDataset(Dataset):
         """
         self.data.sort(key=key)
 
+    def sample_inds(self, inds: List[float]):
+        """
+        Samples the dataset according to specified indicies and returns new
+        dataset.
+
+        :param inds: A list of desired inds of the dataset to keep.
+        """
+        data = [self.data[i] for i in inds]
+        return MoleculeDataset(data)
+
+    def sample_task_ind(self, inds: List[int]):
+        """
+        Samples the dataset and keeps only the specified task target inds
+
+        :param inds: The indices of the desired targets to sub-sample.
+        """
+        for i in range(len(self.data)):
+            all_targets = self.data[i].targets
+            new_targets = [all_targets[ind] for ind in inds]
+            self.data[i].targets = new_targets
+
+
     def __len__(self) -> int:
         """
         Returns the length of the dataset (i.e. the number of molecules).
@@ -249,3 +273,232 @@ class MoleculeDataset(Dataset):
         :return: A MoleculeDatapoint if an int is provided or a list of MoleculeDatapoints if a slice is provided.
         """
         return self.data[item]
+
+
+class AtomisticDataset(MoleculeDataset):
+    """AtomisticDataset contains schnetpack QM9 dataset."""
+
+    def __init__(self, data, preload=True, data_ram=None):
+        """
+        Initializes a AtomisticDataset, which contains a schnetpack QM9 dataset.
+
+        :param data: A schnetpack QM9 dataset object.
+        :param preload: If the data should be pre-fetched and stored into RAM
+        :param data_ram: The RAM version of data, if already available (e.g. from sub-sampling)
+        """
+        self.data = data
+        self.preload = preload
+        self.data_ram = data_ram
+
+        if self.preload and self.data_ram is None:
+            import schnetpack as spk
+
+            self.data_ram = []
+            load_batch_size = 1280
+            loader  = spk.AtomsLoader(self.data, batch_size=load_batch_size, shuffle=False, num_workers=10)
+            # Loop through the dataset and store into RAM
+            for batch in loader:
+                keys = batch.keys()
+                for i in range(len(batch[QM9.U0])):
+                    atom_dict = {k: batch[k][i] for k in keys}
+                    self.data_ram.append(atom_dict)
+
+            # convert from array of dicts to a collated dict of arrays
+            # we do this since some of the size of some attributes are dependent
+            # on the molecule, so we need to standardize the sizes for training
+            self.data_ram = spk.data.loader._collate_aseatoms(self.data_ram)
+
+            # convert back to array of dicts now that we've collated in line above
+            def dict_to_list(DL):
+                return [dict(zip(DL,t)) for t in zip(*DL.values())]
+            self.data_ram = dict_to_list(self.data_ram)
+
+
+    def get_atomref(self, *args, **kwargs):
+        """
+        Inherit the get atomref function of the QM9 data
+        """
+        return self.data.get_atomref(*args, **kwargs)
+
+    def compound_names(self) -> List[str]:
+        """
+        Returns the compound names associated with the molecule (if they exist).
+
+        :return: A list of compound names or None if the dataset does not contain compound names.
+        """
+        return None
+
+    def smiles(self) -> List[str]:
+        """
+        Returns the smiles strings associated with the molecules.
+
+        TODO: actually extract smiles
+
+        :return: A list of smiles strings.
+        """
+        return [None for i in range(len(self.data))]
+
+    def mols(self) -> List[Chem.Mol]:
+        """
+        Returns the RDKit molecules associated with the molecules.
+
+        :return: A list of RDKit Mols.
+        """
+        return []
+
+    def features(self) -> List[np.ndarray]:
+        """
+        Returns the features associated with each molecule (if they exist).
+
+        :return: A list of 1D numpy arrays containing the features for each molecule or None if there are no features.
+        """
+        return None
+
+    def targets(self) -> List[List[float]]:
+        """
+        Returns the targets associated with each molecule.
+
+        :return: A list of lists of floats containing the targets.
+        """
+        if self.preload:
+            return [[j[QM9.U0].item()] for j in self.data_ram] # if data_ram is a array of dicts
+            # return self.data_ram[QM9.U0].numpy() # if data_ram is a dict of arrays
+        else:
+            return [[j[QM9.U0].item()] for j in self.data]
+
+    def num_tasks(self) -> int:
+        """
+        Returns the number of prediction tasks.
+
+        TODO: Remove hardcoding of 1
+
+        :return: The number of tasks.
+        """
+        return 1
+
+    def features_size(self) -> int:
+        """
+        Returns the size of the features array associated with each molecule.
+
+        :return: The size of the features.
+        """
+        return None
+
+    def sample(self, sample_size: int):
+        """
+        Samples a random subset of the dataset.
+
+        :param sample_size: The size of the sample to produce.
+        """
+        raise NotImplemetedError("AtomisticDataset.sample is not implemeneted.")
+
+        # self.data = random.sample(self.data, sample_size)
+
+    def shuffle(self, seed: int = None):
+        """
+        Shuffles the dataset.
+
+        :param seed: Optional random seed.
+        """
+        if self.preload:
+            if seed is not None:
+                random.seed(seed)
+                random.shuffle(self.data_ram)
+        else:
+            raise NotImplemetedError("AtomisticDataset.shuffle is not implemeneted for non-preloaded datasets.")
+
+
+    def normalize_features(self, scaler: StandardScaler = None, replace_nan_token: int = 0) -> StandardScaler:
+        """
+        Normalizes the features of the dataset using a StandardScaler (subtract mean, divide by standard deviation).
+
+        If a scaler is provided, uses that scaler to perform the normalization. Otherwise fits a scaler to the
+        features in the dataset and then performs the normalization.
+
+        :param scaler: A fitted StandardScaler. Used if provided. Otherwise a StandardScaler is fit on
+        this dataset and is then used.
+        :param replace_nan_token: What to replace nans with.
+        :return: A fitted StandardScaler. If a scaler is provided, this is the same scaler. Otherwise, this is
+        a scaler fit on this dataset.
+        """
+        raise NotImplemetedError("AtomisticDataset.normalize_features is not implemeneted.")
+        # if len(self.data) == 0 or self.data[0].features is None:
+        #     return None
+        #
+        # if scaler is not None:
+        #     self.scaler = scaler
+        #
+        # elif self.scaler is None:
+        #     features = np.vstack([d.features for d in self.data])
+        #     self.scaler = StandardScaler(replace_nan_token=replace_nan_token)
+        #     self.scaler.fit(features)
+        #
+        # for d in self.data:
+        #     d.set_features(self.scaler.transform(d.features.reshape(1, -1))[0])
+        #
+        # return self.scaler
+
+    def set_targets(self, targets: List[List[float]]):
+        """
+        Sets the targets for each molecule in the dataset. Assumes the targets are aligned with the datapoints.
+
+        :param targets: A list of lists of floats containing targets for each molecule. This must be the
+        same length as the underlying dataset.
+        """
+
+        if self.preload:
+            for i in range(len(self.data_ram)):
+                for j in range(len(targets[i])):
+                    self.data_ram[i][QM9.U0][j] = targets[i][j]
+
+        else:
+            for i in range(len(self.data)):
+                for j in range(len(targets[i])):
+                    self.data[i][QM9.U0][j] = targets[i][j]
+
+
+    def sort(self, key: Callable):
+        """
+        Sorts the dataset using the provided key.
+
+        :param key: A function on a MoleculeDatapoint to determine the sorting order.
+        """
+        self.data.sort(key=key)
+
+    def sample_inds(self, inds: List[float]):
+        """
+        Samples the dataset according to specified indicies and returns new
+        dataset.
+
+        :param inds: A list of desired inds of the dataset to keep.
+        """
+        data_subset = self.data.create_subset(inds)
+
+        if self.preload:
+            data_ram_subset = [self.data_ram[i] for i in inds]
+            return AtomisticDataset(data_subset, data_ram=data_ram_subset)
+        else:
+            return AtomisticDataset(data_subset)
+
+    def __len__(self) -> int:
+        """
+        Returns the length of the dataset (i.e. the number of molecules).
+
+        :return: The length of the dataset.
+        """
+        if self.preload:
+            return len(self.data_ram)
+        else:
+            return len(self.data)
+
+    def __getitem__(self, item) -> Union[MoleculeDatapoint, List[MoleculeDatapoint]]:
+        """
+        Gets one or more schnetpack QM9 datapoint via an index or slice.
+
+        :param item: An index (int) or a slice object.
+        :return: A QM9 datapoint if an int is provided or a list of MoleculeDatapoints if a slice is provided.
+        """
+        if self.preload:
+            return self.data_ram[item]
+        else:
+            return self.data[item]

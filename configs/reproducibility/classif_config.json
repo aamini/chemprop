@@ -1,0 +1,21 @@
+{ 
+    "seeds" : [0,1,2,3,4],
+    "n_ensembles" : 5, 
+    "datasets" : ["sider", "clintox", "bbbp"],  
+    "dataset_types" : ["classification", "classification", "classification"],
+    "dataset_splits": ["random", "random", "random"], 
+    "methods" : ["sigmoid", "ensemble", "dropout", "evidence_new_reg"], 
+    "reg_coefs": [0.2, 0.2, 0.2, 1.0],
+    "split_sizes" : [0.8, 0.1, 0.1], 
+    "save_dir" : "results/2020_12_21_classif",
+    "debug" : false, 
+    "use_gpu" : true, 
+    "job_name_prefix" : "classif", 
+    "experiment_name" : "classif", 
+    "num_minutes" : 0, 
+    "num_hours" : 5, 
+    "num_days" : 0, 
+    "use_slurm" : true,
+    "atomistic" : false, 
+    "no_smiles_export" : true
+}
