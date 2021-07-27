@@ -1,5 +1,3 @@
-# YAML 1.2
----
 authors: 
   -
     family-names: Soleimany
@@ -28,4 +26,3 @@ doi: "10.1021/acscentsci.1c00546"
 message: "If you use this software, please cite it using these metadata."
 repository-code: "https://github.com/aamini/chemprop/blob/confidence-evidential"
 title: "Evidential Deep Learning for Guided Molecular Property Prediction and Discovery"
-...
