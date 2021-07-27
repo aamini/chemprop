@@ -1,12 +1,12 @@
 <h1 align="center">Evidential Deep Learning for Guided Molecular Property Prediction and Discovery</h1>
 <h4 align="center">Ava Soleimany*, Alexander Amini*, Samuel Goldman*, Daniela Rus, Sangeeta Bhatia, Connor Coley</h4>
 
-<p align="center"> [<b><a href="./paper-link">Paper</a></b>] &emsp; [<b><a href="#citation">Citation</a></b>] </p>
+<p align="center"> [<b><a href="https://pubs.acs.org/doi/10.1021/acscentsci.1c00546">Paper</a></b>] &emsp; [<b><a href="#citation">Citation</a></b>] </p>
 
 ![paper-link](teaser.png)
 
 
-The repository contains all of the code and instructions needed to reproduce the experiments and results of **Evidential Deep Learning for Guided Molecular Property Prediction and Discovery**. We detail the changes we have made in the [Evidential Uncertainty](#evidential-uncertainty) section of this README. We acknowledge the original [Chemprop repository](https://pubs.acs.org/doi/pdf/10.1021/acs.jcim.0c00502?casa_token=dUy7JEOj9Y4AAAAA:8s14xrMIr020lqI3mFF8t-mG_U4TtaCd1Kv-3ECkksQZUnzS5uAiKi2qg1xFUTMQonDnmuzOB2Qrsdw) which this code leveraged and built on top of.
+The repository contains all of the code and instructions needed to reproduce the experiments and results of **[Evidential Deep Learning for Guided Molecular Property Prediction and Discovery](https://pubs.acs.org/doi/10.1021/acscentsci.1c00546)**. We detail the changes we have made in the [Evidential Uncertainty](#evidential-uncertainty) section of this README. We acknowledge the original [Chemprop repository](https://pubs.acs.org/doi/pdf/10.1021/acs.jcim.0c00502?casa_token=dUy7JEOj9Y4AAAAA:8s14xrMIr020lqI3mFF8t-mG_U4TtaCd1Kv-3ECkksQZUnzS5uAiKi2qg1xFUTMQonDnmuzOB2Qrsdw) which this code leveraged and built on top of.
 
 For setup instructions for the broader chemprop repository (as a prerequisite to our changes), please refer to the complete [Chemprop setup guide](README_chemprop.md).
 
@@ -131,15 +131,12 @@ python predict.py --test_path data/tox21.csv --checkpoint_path tox21_checkpoints
 
 ## Citation
 
-If you use the results presented in this paper or the code from the repository, please cite the relevant paper:
+If you use the results presented in this paper or the code from the repository, please cite the relevant [paper](https://pubs.acs.org/doi/10.1021/acscentsci.1c00546):
 ```
 @article{soleimany2021evidential,
   title={Evidential Deep Learning for Guided Molecular Property Prediction and Discovery},
   author={Soleimany, Ava P and Amini, Alexander and Goldman, Samuel and Rus, Daniela and Bhatia, Sangeeta and Coley, Connor},
-  journal={ACS central science},
-  volume={},
-  number={},
-  pages={},
+  journal={ACS Central Science},
   year={2021},
   publisher={ACS Publications}
 }
