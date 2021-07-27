@@ -1,0 +1,24 @@
+cff-version: 1.2.0
+message: "If you use this software, please cite it as below."
+authors:
+- family-names: "Soleimany"
+  given-names: "Ava"
+  orcid: "https://orcid.org/0000-0002-8601-6040"
+- family-names: "Amini"
+  given-names: "Alexander"
+  orcid: "https://orcid.org/0000-0002-9673-1267"
+- family-names: "Goldman"
+  given-names: "Samuel"
+- family-names: "Rus"
+  given-names: "Daniela"
+- family-names: "Bhatia"
+  given-names: "Sangeeta"
+  orcid: "https://orcid.org/0000-0002-1293-2097"
+- family-names: "Coley"
+  given-names: "Connor"
+  orcid: "https://orcid.org/0000-0002-8271-8723"
+ 
+title: "Evidential Deep Learning for Guided Molecular Property Prediction and Discovery"
+doi: 10.1021/acscentsci.1c00546
+date-released: 2021-07-27
+url: "https://github.com/aamini/chemprop"
