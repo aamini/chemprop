@@ -17,7 +17,7 @@ For setup instructions for the broader chemprop repository (as a prerequisite to
 1. **Model modifications:** Because the evidential model requires outputting 4 auxilary parameters of the evidential distribution for every single desired target, we have modified `chemprop/model/model.py`.
 2. **Predicting uncertainty:** The predict module in `chemprop/train/predict.py` has been modified to convert these four parmaeters into an uncertainty prediction.
 3. **Loss function:** The evidential loss function can be found in `chemprop/utils.py`. We note that the most up to date version of this loss function is accessed using the `--new_loss` flag.
-4. **Addition of SchNet support:** In order to demonstrate evidential uncertianty on SchNet, we have integrated the SchNet package into the Chemprop training procedure by modifying `chemprop/model/model.py` and `chemprop/train/run_training.py`. `train_atomistic.py` serves as an entrypoint to use this model. Demonstrations for benchmarking with this model can be fund in the [Benchmarking](#benchmarking) section.
+4. **Addition of SchNet support:** In order to demonstrate evidential uncertainty on SchNet, we have integrated the SchNet package into the Chemprop training procedure by modifying `chemprop/model/model.py` and `chemprop/train/run_training.py`. `train_atomistic.py` serves as an entrypoint to use this model. Demonstrations for benchmarking with this model can be fund in the [Benchmarking](#benchmarking) section.
 
 ### Training a Model
 
